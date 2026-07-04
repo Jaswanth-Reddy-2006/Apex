@@ -767,9 +767,10 @@ export const connectGithub = createServerFn({ method: "POST" })
     // 3. Upsert integration connection
     await context.prisma.integrationConnection.upsert({
       where: {
-        organization_id_provider: {
+        organization_id_provider_connected_by: {
           organization_id,
           provider: "github",
+          connected_by: context.userId,
         },
       },
       update: {
@@ -777,7 +778,6 @@ export const connectGithub = createServerFn({ method: "POST" })
         display_name: githubUsername,
         credentials_vault_key: accessToken,
         last_sync_at: new Date(),
-        connected_by: context.userId,
       },
       create: {
         organization_id,
@@ -804,9 +804,10 @@ export const listGithubRepositories = createServerFn({ method: "GET" })
     
     const connection = await context.prisma.integrationConnection.findUnique({
       where: {
-        organization_id_provider: {
+        organization_id_provider_connected_by: {
           organization_id,
           provider: "github",
+          connected_by: context.userId,
         },
       },
     });
@@ -911,9 +912,10 @@ export const connectVercelToken = createServerFn({ method: "POST" })
     // 2. Upsert integration connection in MongoDB
     await context.prisma.integrationConnection.upsert({
       where: {
-        organization_id_provider: {
+        organization_id_provider_connected_by: {
           organization_id,
           provider: "vercel",
+          connected_by: context.userId,
         },
       },
       update: {
@@ -921,7 +923,6 @@ export const connectVercelToken = createServerFn({ method: "POST" })
         display_name: vercelUsername,
         credentials_vault_key: token,
         last_sync_at: new Date(),
-        connected_by: context.userId,
       },
       create: {
         organization_id,
@@ -1000,14 +1001,17 @@ export const connectVercelOAuth = createServerFn({ method: "POST" })
     // 3. Upsert integration connection in MongoDB
     await context.prisma.integrationConnection.upsert({
       where: {
-        organization_id_provider: { organization_id, provider: "vercel" },
+        organization_id_provider_connected_by: {
+          organization_id,
+          provider: "vercel",
+          connected_by: context.userId,
+        },
       },
       update: {
         status: "connected",
         display_name: vercelUsername,
         credentials_vault_key: accessToken,
         last_sync_at: new Date(),
-        connected_by: context.userId,
       },
       create: {
         organization_id,
@@ -1033,9 +1037,10 @@ export const listVercelProjects = createServerFn({ method: "GET" })
     const { organization_id } = data;
     const connection = await context.prisma.integrationConnection.findUnique({
       where: {
-        organization_id_provider: {
+        organization_id_provider_connected_by: {
           organization_id,
           provider: "vercel",
+          connected_by: context.userId,
         },
       },
     });
@@ -1126,9 +1131,10 @@ export const connectGitlab = createServerFn({ method: "POST" })
 
     await context.prisma.integrationConnection.upsert({
       where: {
-        organization_id_provider: {
+        organization_id_provider_connected_by: {
           organization_id,
           provider: "gitlab",
+          connected_by: context.userId,
         },
       },
       update: {
@@ -1136,7 +1142,6 @@ export const connectGitlab = createServerFn({ method: "POST" })
         display_name: username,
         credentials_vault_key: token,
         last_sync_at: new Date(),
-        connected_by: context.userId,
       },
       create: {
         organization_id,
@@ -1162,9 +1167,10 @@ export const listGitlabRepositories = createServerFn({ method: "GET" })
     const { organization_id } = data;
     const connection = await context.prisma.integrationConnection.findUnique({
       where: {
-        organization_id_provider: {
+        organization_id_provider_connected_by: {
           organization_id,
           provider: "gitlab",
+          connected_by: context.userId,
         },
       },
     });
@@ -1343,9 +1349,10 @@ export const connectNotion = createServerFn({ method: "POST" })
 
     await context.prisma.integrationConnection.upsert({
       where: {
-        organization_id_provider: {
+        organization_id_provider_connected_by: {
           organization_id,
           provider: "notion",
+          connected_by: context.userId,
         },
       },
       update: {
@@ -1353,7 +1360,6 @@ export const connectNotion = createServerFn({ method: "POST" })
         display_name: workspaceName,
         credentials_vault_key: token,
         last_sync_at: new Date(),
-        connected_by: context.userId,
       },
       create: {
         organization_id,
@@ -1416,9 +1422,10 @@ export const connectNotionOAuth = createServerFn({ method: "POST" })
     // 2. Save in database
     await context.prisma.integrationConnection.upsert({
       where: {
-        organization_id_provider: {
+        organization_id_provider_connected_by: {
           organization_id,
           provider: "notion",
+          connected_by: context.userId,
         },
       },
       update: {
@@ -1426,7 +1433,6 @@ export const connectNotionOAuth = createServerFn({ method: "POST" })
         display_name: workspaceName,
         credentials_vault_key: accessToken,
         last_sync_at: new Date(),
-        connected_by: context.userId,
       },
       create: {
         organization_id,
@@ -1453,9 +1459,10 @@ export const listNotionPages = createServerFn({ method: "GET" })
     
     const connection = await context.prisma.integrationConnection.findUnique({
       where: {
-        organization_id_provider: {
+        organization_id_provider_connected_by: {
           organization_id,
           provider: "notion",
+          connected_by: context.userId,
         },
       },
     });
@@ -1519,6 +1526,37 @@ export const listNotionPages = createServerFn({ method: "GET" })
         ],
       };
     }
+  });
+
+export const disconnectIntegration = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((input) =>
+    z.object({
+      organization_id: z.string(),
+      provider: z.string(),
+    }).parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    const { organization_id, provider } = data;
+    await verifyPermission(context, organization_id, "Integrations.Delete");
+
+    await context.prisma.integrationConnection.deleteMany({
+      where: {
+        organization_id,
+        provider,
+        connected_by: context.userId,
+      },
+    });
+
+    // Also remove RAG sync data for this integration
+    await context.prisma.integrationDataNode.deleteMany({
+      where: {
+        organization_id,
+        provider,
+      },
+    });
+
+    return { success: true };
   });
 
 

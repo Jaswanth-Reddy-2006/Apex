@@ -39,3 +39,4 @@ export const updateMemberProjects = createClientFn("updateMemberProjects", "POST
 export const connectNotion = createClientFn("connectNotion", "POST") as typeof backendApi.connectNotion;
 export const connectNotionOAuth = createClientFn("connectNotionOAuth", "POST") as typeof backendApi.connectNotionOAuth;
 export const listNotionPages = createClientFn("listNotionPages", "GET") as typeof backendApi.listNotionPages;
+export const disconnectIntegration = createClientFn("disconnectIntegration", "POST") as typeof backendApi.disconnectIntegration;

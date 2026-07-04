@@ -2,8 +2,26 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { CheckCircle2, Circle, Lock, Loader2 } from "lucide-react";
-import { listIntegrations, connectGitlab, connectNotion } from "@/lib/api.functions";
+import {
+  CheckCircle2,
+  Circle,
+  Lock,
+  Loader2,
+  ExternalLink,
+  Trash2,
+  Settings2,
+  BookOpen,
+  AlertTriangle,
+} from "lucide-react";
+import {
+  listIntegrations,
+  connectGitlab,
+  connectNotion,
+  disconnectIntegration,
+  listGithubRepositories,
+  listGitlabRepositories,
+  listNotionPages,
+} from "@/lib/api.functions";
 import { INTEGRATIONS, type IntegrationDefinition } from "@/lib/integrations-catalog";
 import { useOrg } from "@/lib/org-context";
 import { PageHeader, EmptyState } from "@/components/app/page-header";
@@ -50,6 +68,46 @@ function IntegrationsPage() {
   const [notionToken, setNotionToken] = useState("");
   const [notionWorkspace, setNotionWorkspace] = useState("");
   const [connectingNotion, setConnectingNotion] = useState(false);
+
+  const [selectedManageIntegration, setSelectedManageIntegration] = useState<string | null>(null);
+  const disconnectFn = useServerFn(disconnectIntegration);
+
+  const disconnectMutation = useMutation({
+    mutationFn: (provider: string) =>
+      disconnectFn({
+        data: { organization_id: activeOrg?.organization_id!, provider },
+      }),
+    onSuccess: (_, provider) => {
+      toast.success(`${provider} disconnected successfully.`);
+      queryClient.invalidateQueries({ queryKey: ["integrations", activeOrg?.organization_id] });
+      setSelectedManageIntegration(null);
+    },
+    onError: (err: any) => {
+      toast.error(err.message || "Failed to disconnect integration.");
+    },
+  });
+
+  const listGithubFn = useServerFn(listGithubRepositories);
+  const listGitlabFn = useServerFn(listGitlabRepositories);
+  const listNotionPagesFn = useServerFn(listNotionPages);
+
+  const githubReposQuery = useQuery({
+    queryKey: ["github-repos-manage", activeOrg?.organization_id],
+    queryFn: () => listGithubFn({ data: { organization_id: activeOrg?.organization_id! } }),
+    enabled: selectedManageIntegration === "github" && !!activeOrg,
+  });
+
+  const gitlabReposQuery = useQuery({
+    queryKey: ["gitlab-repos-manage", activeOrg?.organization_id],
+    queryFn: () => listGitlabFn({ data: { organization_id: activeOrg?.organization_id! } }),
+    enabled: selectedManageIntegration === "gitlab" && !!activeOrg,
+  });
+
+  const notionPagesQuery = useQuery({
+    queryKey: ["notion-pages-manage", activeOrg?.organization_id],
+    queryFn: () => listNotionPagesFn({ organization_id: activeOrg?.organization_id! }),
+    enabled: selectedManageIntegration === "notion" && !!activeOrg,
+  });
 
   const { data, isLoading } = useQuery({ 
     queryKey: ["integrations", activeOrg?.organization_id], 
@@ -246,15 +304,48 @@ function IntegrationsPage() {
                       </Badge>
                     )}
                   </CardHeader>
-                  <CardContent className="pt-0">
-                    <Button
-                      variant={isConnected ? "outline" : "default"}
-                      size="sm"
-                      className={isConnected ? "" : "gradient-primary text-primary-foreground"}
-                      onClick={() => handleConnectClick(i, isConnected)}
-                    >
-                      {isConnected ? "Connected" : "Connect"}
-                    </Button>
+                  <CardContent className="pt-0 space-y-3">
+                    {isConnected && conn?.created_at && (
+                      <p className="text-[11px] text-muted-foreground">
+                        Connected on {new Date(conn.created_at).toLocaleDateString()}
+                      </p>
+                    )}
+                    <div className="flex gap-2 w-full">
+                      {isConnected ? (
+                        <>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="flex-1"
+                            onClick={() => setSelectedManageIntegration(i.id)}
+                          >
+                            <Settings2 className="mr-1.5 h-3.5 w-3.5" />
+                            Manage
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="text-destructive hover:bg-destructive/10"
+                            onClick={() => {
+                              if (confirm(`Are you sure you want to disconnect ${i.name}?`)) {
+                                disconnectMutation.mutate(i.id);
+                              }
+                            }}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </>
+                      ) : (
+                        <Button
+                          variant="default"
+                          size="sm"
+                          className="w-full gradient-primary text-primary-foreground"
+                          onClick={() => handleConnectClick(i, isConnected)}
+                        >
+                          Connect
+                        </Button>
+                      )}
+                    </div>
                   </CardContent>
                 </Card>
               );
@@ -340,6 +431,153 @@ function IntegrationsPage() {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={selectedManageIntegration !== null}
+        onOpenChange={(open) => {
+          if (!open) setSelectedManageIntegration(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle className="capitalize flex items-center gap-2">
+              <Settings2 className="h-5 w-5 text-primary" />
+              Manage {selectedManageIntegration} Connection
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-6 py-4">
+            {/* Status section */}
+            <div className="rounded-lg border border-border p-4 bg-muted/30 flex items-center justify-between">
+              <div className="space-y-1">
+                <p className="text-xs text-muted-foreground uppercase font-semibold tracking-wider">Account Connection</p>
+                <p className="text-sm font-semibold text-foreground">
+                  {selectedManageIntegration && connected.get(selectedManageIntegration)?.display_name ? (
+                    <span>@{connected.get(selectedManageIntegration)?.display_name}</span>
+                  ) : (
+                    <span>Authorized Account</span>
+                  )}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Status: <span className="text-success font-medium">Synced & Active</span>
+                </p>
+              </div>
+
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={() => {
+                  if (selectedManageIntegration && confirm(`Are you sure you want to disconnect ${selectedManageIntegration}?`)) {
+                    disconnectMutation.mutate(selectedManageIntegration);
+                  }
+                }}
+                disabled={disconnectMutation.isPending}
+              >
+                {disconnectMutation.isPending ? (
+                  <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Disconnecting...</>
+                ) : (
+                  "Disconnect Account"
+                )}
+              </Button>
+            </div>
+
+            {/* List of synced resources (repositories or Notion pages) */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-foreground flex items-center gap-1.5">
+                  <BookOpen className="h-4 w-4 text-muted-foreground" />
+                  {selectedManageIntegration === "notion" ? "Synced Workspace Pages" : "Linked Repositories"}
+                </h3>
+                <Badge variant="secondary" className="font-mono text-xs">
+                  {selectedManageIntegration === "github" && (githubReposQuery.data?.repositories?.length ?? 0)}
+                  {selectedManageIntegration === "gitlab" && (gitlabReposQuery.data?.repositories?.length ?? 0)}
+                  {selectedManageIntegration === "notion" && (notionPagesQuery.data?.pages?.length ?? 0)}
+                  {selectedManageIntegration && !["github", "gitlab", "notion"].includes(selectedManageIntegration) && 0}
+                  {" resources"}
+                </Badge>
+              </div>
+
+              {/* GitHub loading/list */}
+              {selectedManageIntegration === "github" && (
+                <div className="space-y-2 max-h-[250px] overflow-y-auto pr-1">
+                  {githubReposQuery.isLoading ? (
+                    <div className="space-y-2 py-4">
+                      <Skeleton className="h-8 w-full" />
+                      <Skeleton className="h-8 w-full" />
+                    </div>
+                  ) : githubReposQuery.data?.repositories?.length ? (
+                    githubReposQuery.data.repositories.map((repo: any) => (
+                      <div key={repo.full_name} className="flex items-center justify-between p-2.5 rounded-lg border border-border bg-card text-sm">
+                        <span className="font-medium text-foreground">{repo.full_name}</span>
+                        <a href={repo.html_url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline flex items-center gap-1 text-xs">
+                          View Repository <ExternalLink className="h-3 w-3" />
+                        </a>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-xs text-muted-foreground text-center py-4">No repositories found in this account.</p>
+                  )}
+                </div>
+              )}
+
+              {/* GitLab loading/list */}
+              {selectedManageIntegration === "gitlab" && (
+                <div className="space-y-2 max-h-[250px] overflow-y-auto pr-1">
+                  {gitlabReposQuery.isLoading ? (
+                    <div className="space-y-2 py-4">
+                      <Skeleton className="h-8 w-full" />
+                      <Skeleton className="h-8 w-full" />
+                    </div>
+                  ) : gitlabReposQuery.data?.repositories?.length ? (
+                    gitlabReposQuery.data.repositories.map((repo: any) => (
+                      <div key={repo.full_name} className="flex items-center justify-between p-2.5 rounded-lg border border-border bg-card text-sm">
+                        <span className="font-medium text-foreground">{repo.full_name}</span>
+                        <a href={repo.html_url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline flex items-center gap-1 text-xs">
+                          View Repository <ExternalLink className="h-3 w-3" />
+                        </a>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-xs text-muted-foreground text-center py-4">No repositories found in this account.</p>
+                  )}
+                </div>
+              )}
+
+              {/* Notion loading/list */}
+              {selectedManageIntegration === "notion" && (
+                <div className="space-y-2 max-h-[250px] overflow-y-auto pr-1">
+                  {notionPagesQuery.isLoading ? (
+                    <div className="space-y-2 py-4">
+                      <Skeleton className="h-8 w-full" />
+                      <Skeleton className="h-8 w-full" />
+                    </div>
+                  ) : notionPagesQuery.data?.pages?.length ? (
+                    notionPagesQuery.data.pages.map((page: any) => (
+                      <div key={page.id} className="flex items-center justify-between p-2.5 rounded-lg border border-border bg-card text-sm">
+                        <div className="flex flex-col space-y-0.5">
+                          <span className="font-medium text-foreground">{page.title}</span>
+                          {page.last_edited_time && (
+                            <span className="text-[10px] text-muted-foreground">Edited: {new Date(page.last_edited_time).toLocaleDateString()}</span>
+                          )}
+                        </div>
+                        {page.url ? (
+                          <a href={page.url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline flex items-center gap-1 text-xs">
+                            Open in Notion <ExternalLink className="h-3 w-3" />
+                          </a>
+                        ) : (
+                          <span className="text-[10px] text-muted-foreground">Synced to AI Memory</span>
+                        )}
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-xs text-muted-foreground text-center py-4">No accessible pages found in this workspace connection.</p>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

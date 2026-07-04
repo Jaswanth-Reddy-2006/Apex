@@ -85,6 +85,36 @@ function ProjectsPage() {
   const githubRepos = githubData?.repositories ?? [];
   const gitlabRepos = gitlabData?.repositories ?? [];
 
+  const projectName = form.watch("name") || "";
+  const repoUrl = form.watch("repository_url") || "";
+
+  const isMismatch = (() => {
+    if (!projectName || !repoUrl) return false;
+    
+    // Get repo name from URL
+    let repoName = "";
+    try {
+      const parts = repoUrl.split("/");
+      repoName = parts[parts.length - 1] || "";
+    } catch {
+      return false;
+    }
+
+    const cleanProject = projectName.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const cleanRepo = repoName.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+    if (cleanProject.includes(cleanRepo) || cleanRepo.includes(cleanProject)) {
+      return false;
+    }
+
+    // Split into words and check overlap (words must be > 2 chars)
+    const projectWords = projectName.toLowerCase().split(/[\s-_\/]+/).filter(w => w.length > 2);
+    const repoWords = repoName.toLowerCase().split(/[\s-_\/]+/).filter(w => w.length > 2);
+
+    const hasOverlap = projectWords.some(pw => repoWords.some(rw => rw.includes(pw) || pw.includes(rw)));
+    return !hasOverlap;
+  })();
+
   const create = useMutation({
     mutationFn: (values: z.infer<typeof schema>) => createFn({ data: values }),
     onSuccess: () => {
@@ -165,37 +195,44 @@ function ProjectsPage() {
                         <span>Loading repositories...</span>
                       </div>
                     ) : (githubRepos.length > 0 || gitlabRepos.length > 0) ? (
-                      <Select
-                        value={form.watch("repository_url")}
-                        onValueChange={(v) => form.setValue("repository_url", v)}
-                      >
-                        <SelectTrigger className="mt-1">
-                          <SelectValue placeholder="Select a repository" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="">None / Manual URL</SelectItem>
-                          {githubRepos.length > 0 && (
-                            <>
-                              <div className="px-2 py-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">GitHub</div>
-                              {githubRepos.map((r: any) => (
-                                <SelectItem key={r.full_name} value={r.html_url}>
-                                  GitHub: {r.full_name}
-                                </SelectItem>
-                              ))}
-                            </>
-                          )}
-                          {gitlabRepos.length > 0 && (
-                            <>
-                              <div className="px-2 py-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mt-1">GitLab</div>
-                              {gitlabRepos.map((r: any) => (
-                                <SelectItem key={r.full_name} value={r.html_url}>
-                                  GitLab: {r.full_name}
-                                </SelectItem>
-                              ))}
-                            </>
-                          )}
-                        </SelectContent>
-                      </Select>
+                      <>
+                        <Select
+                          value={form.watch("repository_url")}
+                          onValueChange={(v) => form.setValue("repository_url", v)}
+                        >
+                          <SelectTrigger className="mt-1">
+                            <SelectValue placeholder="Select a repository" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="">None / Manual URL</SelectItem>
+                            {githubRepos.length > 0 && (
+                              <>
+                                <div className="px-2 py-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">GitHub</div>
+                                {githubRepos.map((r: any) => (
+                                  <SelectItem key={r.full_name} value={r.html_url}>
+                                    GitHub: {r.full_name}
+                                  </SelectItem>
+                                ))}
+                              </>
+                            )}
+                            {gitlabRepos.length > 0 && (
+                              <>
+                                <div className="px-2 py-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mt-1">GitLab</div>
+                                {gitlabRepos.map((r: any) => (
+                                  <SelectItem key={r.full_name} value={r.html_url}>
+                                    GitLab: {r.full_name}
+                                  </SelectItem>
+                                ))}
+                              </>
+                            )}
+                          </SelectContent>
+                        </Select>
+                        {isMismatch && (
+                          <p className="mt-2 text-xs text-amber-600 font-medium flex items-center gap-1 bg-amber-500/10 border border-amber-500/20 rounded-md p-2">
+                            ⚠️ The project name and description you have given do not seem to match this repository. Please make sure you have connected the correct space.
+                          </p>
+                        )}
+                      </>
                     ) : (
                       <p className="mt-1 text-xs text-muted-foreground">
                         No connected repositories found. Connect GitHub or GitLab under the "Integrations" page.
