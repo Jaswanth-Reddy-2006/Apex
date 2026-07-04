@@ -1,12 +1,12 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { requireAuth } from "../lib/auth-middleware.js";
 import { prisma } from "../lib/prisma.js";
 import { checkPermission, getUserPermissions } from "../lib/permissions.js";
 
 /**
  * APEX server-side RPCs. All calls are typed, Zod-validated, and RLS-scoped
- * via the authenticated supabase client from `requireSupabaseAuth`.
+ * via the authenticated client from `requireAuth`.
  */
 
 const slugify = (s: string) =>
@@ -142,7 +142,7 @@ export const bootstrapOrganization = createServerFn({ method: "POST" })
   });
 
 export const joinDemoOrganization = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((input) =>
     z
       .object({
@@ -477,7 +477,7 @@ export const listPermissions = createServerFn({ method: "GET" })
   });
 
 export const getMyPermissions = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((input) => z.object({ organization_id: z.string().uuid() }).parse(input))
   .handler(async ({ data, context }) => {
     return await getUserPermissions(context.userId, data.organization_id);
@@ -550,7 +550,7 @@ export const updateRolePermissions = createServerFn({ method: "POST" })
   });
 
 export const deleteRole = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((input) => z.object({ role_id: z.string().uuid(), organization_id: z.string().uuid() }).parse(input))
   .handler(async ({ data, context }) => {
     await checkPermission(context.userId, data.organization_id, 'Roles.Manage');
@@ -825,7 +825,7 @@ export const listGithubRepositories = createServerFn({ method: "GET" })
 // ================================================================
 
 export const connectVercelToken = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((input) =>
     z.object({
       token: z.string().min(10),
@@ -881,7 +881,7 @@ export const connectVercelToken = createServerFn({ method: "POST" })
 // OAuth flow — used when VERCEL_CLIENT_ID + VERCEL_CLIENT_SECRET are configured
 // Any user clicks "Connect" → redirected to Vercel → comes back with code → this exchanges it
 export const connectVercelOAuth = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((input) =>
     z.object({
       code: z.string(),
@@ -965,7 +965,7 @@ export const connectVercelOAuth = createServerFn({ method: "POST" })
   });
 
 export const listVercelProjects = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((input) =>
     z.object({
       organization_id: z.string(),

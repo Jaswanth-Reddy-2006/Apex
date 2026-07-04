@@ -77,9 +77,14 @@ export async function getUserPermissions(userId: string, orgId: string): Promise
   if (!roleId) return [];
 
   const rolePerms = await prisma.rolePermission.findMany({
-    where: { role_id: roleId },
-    include: { permission: true }
+    where: { role_id: roleId }
   });
 
-  return rolePerms.map(rp => rp.permission.key);
+  if (rolePerms.length === 0) return [];
+
+  const perms = await prisma.permission.findMany({
+    where: { id: { in: rolePerms.map(rp => rp.permission_id) } }
+  });
+
+  return perms.map(p => p.key);
 }

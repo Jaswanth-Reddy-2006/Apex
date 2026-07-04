@@ -507,6 +507,16 @@ export function createSupabasePrismaClient(userId: string, email?: string, userM
             profile = await prisma.profile.create({
               data: {
                 id: userId,
+                user: {
+                  connectOrCreate: {
+                    where: { id: userId },
+                    create: {
+                      id: userId,
+                      email: email || "user@example.com",
+                      password: "supabase-auth-placeholder"
+                    }
+                  }
+                },
                 email: email || "user@example.com",
                 full_name: fullName,
                 avatar_url: avatarUrl,

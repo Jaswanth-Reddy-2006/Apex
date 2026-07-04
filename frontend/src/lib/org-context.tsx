@@ -60,7 +60,7 @@ export function OrgProvider({ children }: { children: ReactNode }) {
     if (!q.data) return;
     const orgs = q.data.organizations;
     if (orgs.length === 0) return;
-    if (!activeOrgId || !orgs.find((o) => o.organization_id === activeOrgId)) {
+    if (!activeOrgId || !orgs.find((o: any) => o.organization_id === activeOrgId)) {
       setActiveOrgIdState(orgs[0].organization_id);
       if (typeof window !== "undefined") localStorage.setItem(STORAGE_KEY, orgs[0].organization_id);
     }
@@ -73,7 +73,7 @@ export function OrgProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<OrgContextValue>(() => {
     const organizations = q.data?.organizations ?? [];
-    const activeOrg = organizations.find((o) => o.organization_id === activeOrgId) ?? null;
+    const activeOrg = organizations.find((o: any) => o.organization_id === activeOrgId) ?? null;
     const permissions = activeOrg ? q.data?.permissions_by_org[activeOrg.organization_id] ?? [] : [];
     const role = activeOrg?.custom_role_slug || activeOrg?.base_role || "viewer";
     const isOwner = activeOrg?.base_role === "owner";

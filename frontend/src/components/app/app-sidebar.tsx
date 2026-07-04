@@ -64,7 +64,7 @@ const secondary: Item[] = [
 
 export function AppSidebar() {
   const pathname = useRouterState({ select: (r) => r.location.pathname });
-  const { hasPermission, isAdmin, activeOrg } = useOrg();
+  const { hasPermission, activeOrg } = useOrg();
   const isActive = (url: string) => pathname === url || pathname.startsWith(url + "/");
 
   const gate = (i: Item) => {

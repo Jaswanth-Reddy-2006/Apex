@@ -5,17 +5,14 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
 import { Loader2, ArrowLeft, ArrowRight } from "lucide-react";
-import { useServerFn } from "@tanstack/react-start";
-import { supabase } from "@/integrations/supabase/client";
-import { lovable } from "@/integrations/lovable/index";
-import { bootstrapOrganization, joinDemoOrganization } from "@/lib/api.functions";
 import { createClientFn } from "@/lib/api-client";
+import { bootstrapOrganization, joinDemoOrganization } from "@/lib/api.functions";
 import { useAuth } from "@/lib/auth-context";
 import { RoleSelectionUI, type DemoRole } from "@/components/auth/RoleSelectionUI";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
@@ -83,8 +80,8 @@ const TIMEZONES = [
 ];
 
 const loginSchema = z.object({
-  email: z.string().trim().email("Invalid email").max(255),
-  password: z.string().min(6, "At least 6 characters").max(128),
+  email: z.string().email("Invalid email address"),
+  password: z.string().min(6, "Password must be at least 6 characters").max(128),
   remember: z.boolean().optional(),
 });
 
@@ -122,7 +119,7 @@ const registerSchema = z
 function AuthPage() {
   const search = Route.useSearch();
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, setToken } = useAuth();
   const [tab, setTab] = useState<"login" | "register">(search.mode ?? "login");
 
   useEffect(() => {
@@ -246,8 +243,8 @@ function LoginForm() {
 
 function RegisterWizard() {
   const navigate = useNavigate();
-  const bootstrap = useServerFn(bootstrapOrganization);
-  const joinDemo = useServerFn(joinDemoOrganization);
+  const bootstrap = bootstrapOrganization;
+  const joinDemo = joinDemoOrganization;
   const { setToken } = useAuth();
   const [step, setStep] = useState(0);
   const [path, setPath] = useState<"create" | "demo" | null>(null);
@@ -304,13 +301,12 @@ function RegisterWizard() {
     setLoading(true);
     try {
       // 1. Sign up the owner
-      const apiSignup = createClientFn("signup", "POST");
       const res = await apiSignup({
         email: values.email,
         password: values.password,
         fullName: values.fullName,
       });
-      setToken((res as any).token);
+      setToken((res as any).token, (res as any).user);
       if (path === "create") {
         await bootstrap({
           data: {
@@ -339,29 +335,7 @@ function RegisterWizard() {
       navigate({ to: "/dashboard", replace: true });
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Initialization failed");
-=======
-      setToken(res.token, res.user);
 
-      // 2. Bootstrap org
-      await bootstrap({
-        data: {
-          name: values.orgName,
-          description: "",
-          domain: values.orgDomain || "",
-          industry: values.industry,
-          employee_count: values.employeeCount,
-          country: values.country,
-          timezone: values.timezone,
-          phone: values.phone || "",
-          logo_url: values.logoUrl || "",
-          default_project_name: "First Project",
-        },
-      });
-      toast.success("Organization created. Welcome to APEX.");
-      navigate({ to: "/dashboard", replace: true });
-    } catch (e: any) {
-      toast.error(e.message || "Failed to create organization");
->>>>>>> origin/main
     } finally {
       setLoading(false);
     }
