@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { Loader2, AlertCircle, CheckCircle2 } from "lucide-react";
-import { connectGithub } from "@/lib/api.functions";
+import { connectGithub, connectNotionOAuth } from "@/lib/api.functions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 
@@ -18,10 +18,15 @@ function IntegrationsCallbackPage() {
   const navigate = useNavigate();
   const search = useSearch({ from: "/_authenticated/integrations-callback" });
   const connectGithubFn = useServerFn(connectGithub);
+  const connectNotionOAuthFn = useServerFn(connectNotionOAuth);
 
   const [status, setStatus] = useState<"loading" | "success" | "error">("loading");
   const [errorMessage, setErrorMessage] = useState("");
   const [username, setUsername] = useState("");
+
+  const stateStr = search.state || "";
+  const isNotion = stateStr.startsWith("notion:");
+  const providerName = isNotion ? "Notion" : "GitHub";
 
   useEffect(() => {
     let active = true;
@@ -29,29 +34,44 @@ function IntegrationsCallbackPage() {
     async function exchangeCode() {
       if (!search.code || !search.state) {
         setStatus("error");
-        setErrorMessage("Missing authorization code or state parameters from OAuth redirect.");
+        setErrorMessage(`Missing authorization code or state parameters from ${providerName} OAuth redirect.`);
         return;
       }
 
-      const organization_id = search.state;
+      const organization_id = isNotion ? stateStr.replace("notion:", "") : stateStr;
 
       try {
-        const result = await connectGithubFn({
-          data: { code: search.code, organization_id },
-        });
-        if (!active) return;
-        if (result && result.success) {
-          setStatus("success");
-          setUsername(result.username);
-          setTimeout(() => { if (active) navigate({ to: "/integrations" }); }, 2000);
+        if (isNotion) {
+          const result = await connectNotionOAuthFn({
+            data: { code: search.code, organization_id },
+          });
+          if (!active) return;
+          if (result && result.success) {
+            setStatus("success");
+            setUsername(result.workspaceName);
+            setTimeout(() => { if (active) navigate({ to: "/integrations" }); }, 2000);
+          } else {
+            setStatus("error");
+            setErrorMessage("Failed to establish secure Notion connection.");
+          }
         } else {
-          setStatus("error");
-          setErrorMessage("Failed to establish secure GitHub connection.");
+          const result = await connectGithubFn({
+            data: { code: search.code, organization_id },
+          });
+          if (!active) return;
+          if (result && result.success) {
+            setStatus("success");
+            setUsername(result.username);
+            setTimeout(() => { if (active) navigate({ to: "/integrations" }); }, 2000);
+          } else {
+            setStatus("error");
+            setErrorMessage("Failed to establish secure GitHub connection.");
+          }
         }
       } catch (err: any) {
         if (!active) return;
         setStatus("error");
-        setErrorMessage(err.message || "An unexpected error occurred during integration.");
+        setErrorMessage(err.message || `An unexpected error occurred during ${providerName} integration.`);
       }
     }
 
@@ -60,13 +80,13 @@ function IntegrationsCallbackPage() {
     return () => {
       active = false;
     };
-  }, [search.code, search.state, connectGithubFn, navigate]);
+  }, [search.code, search.state, connectGithubFn, connectNotionOAuthFn, navigate, isNotion, stateStr, providerName]);
 
   return (
     <div className="flex min-h-[60vh] items-center justify-center p-4">
       <Card className="w-full max-w-md border-border bg-card/60 backdrop-blur-md shadow-soft">
         <CardHeader className="text-center">
-          <CardTitle className="text-xl font-bold">GitHub Connection</CardTitle>
+          <CardTitle className="text-xl font-bold">{providerName} Connection</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col items-center justify-center space-y-6 pb-8 text-center">
           {status === "loading" && (
@@ -77,7 +97,7 @@ function IntegrationsCallbackPage() {
               <div className="space-y-1">
                 <p className="text-base font-medium">Exchanging OAuth credentials...</p>
                 <p className="text-xs text-muted-foreground">
-                  Establishing a secure token handshake with GitHub
+                  Establishing a secure token handshake with {providerName}
                 </p>
               </div>
             </>
@@ -91,7 +111,7 @@ function IntegrationsCallbackPage() {
               <div className="space-y-1">
                 <p className="text-base font-semibold text-foreground">Connected Successfully!</p>
                 <p className="text-sm text-muted-foreground">
-                  Connected GitHub profile:{" "}
+                  {isNotion ? "Connected Notion Workspace: " : "Connected GitHub profile: "}
                   <span className="font-mono text-primary">{username}</span>
                 </p>
                 <p className="text-xs text-muted-foreground pt-2">

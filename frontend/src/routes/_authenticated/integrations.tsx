@@ -126,9 +126,18 @@ function IntegrationsPage() {
         toast.error("No active organization found.");
         return;
       }
-      setNotionToken("");
-      setNotionWorkspace("");
-      setNotionOpen(true);
+      const clientId = import.meta.env.VITE_NOTION_CLIENT_ID || "";
+      if (!clientId) {
+        setNotionToken("");
+        setNotionWorkspace("");
+        setNotionOpen(true);
+        return;
+      }
+      const redirectUri = encodeURIComponent(`${window.location.origin}/integrations-callback`);
+      const notionOAuthUrl = `https://api.notion.com/v1/oauth/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=code&owner=user&state=notion:${activeOrg.organization_id}`;
+      
+      toast.loading("Redirecting to Notion for authorization...");
+      window.location.href = notionOAuthUrl;
     } else {
       toast.info(`${item.name} integration will be enabled soon.`);
     }

@@ -1365,6 +1365,79 @@ export const connectNotion = createServerFn({ method: "POST" })
     return { success: true, workspaceName };
   });
 
+export const connectNotionOAuth = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((input) =>
+    z.object({
+      code: z.string(),
+      organization_id: z.string(),
+    }).parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    const { code, organization_id } = data;
+    await verifyPermission(context, organization_id, "Integrations.Create");
+
+    const clientId = process.env.NOTION_CLIENT_ID;
+    const clientSecret = process.env.NOTION_CLIENT_SECRET;
+
+    if (!clientId || !clientSecret) {
+      throw new Error("Notion OAuth credentials not configured on the backend server.");
+    }
+
+    const redirectUri = "http://localhost:5173/integrations-callback";
+
+    // 1. Exchange code for access token
+    const tokenResponse = await fetch("https://api.notion.com/v1/oauth/token", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString("base64")}`,
+      },
+      body: JSON.stringify({
+        grant_type: "authorization_code",
+        code,
+        redirect_uri: redirectUri,
+      }),
+    });
+
+    if (!tokenResponse.ok) {
+      const errorText = await tokenResponse.text();
+      console.error("[Notion OAuth] Exchange failed:", errorText);
+      throw new Error(`Failed to exchange Notion OAuth code: ${errorText}`);
+    }
+
+    const tokenData: any = await tokenResponse.json();
+    const accessToken = tokenData.access_token;
+    const workspaceName = tokenData.workspace_name || "Notion Workspace";
+
+    // 2. Save in database
+    await context.prisma.integrationConnection.upsert({
+      where: {
+        organization_id_provider: {
+          organization_id,
+          provider: "notion",
+        },
+      },
+      update: {
+        status: "connected",
+        display_name: workspaceName,
+        credentials_vault_key: accessToken,
+        last_sync_at: new Date(),
+        connected_by: context.userId,
+      },
+      create: {
+        organization_id,
+        provider: "notion",
+        status: "connected",
+        display_name: workspaceName,
+        credentials_vault_key: accessToken,
+        connected_by: context.userId,
+      },
+    });
+
+    return { success: true, workspaceName };
+  });
+
 export const listNotionPages = createServerFn({ method: "GET" })
   .middleware([requireAuth])
   .inputValidator((input) =>
