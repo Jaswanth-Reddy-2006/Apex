@@ -1,10 +1,7 @@
-import { supabase } from "@/integrations/supabase/client";
-
 const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
 export async function apiFetch(endpoint: string, method: "GET" | "POST" = "POST", data?: any) {
-  const { data: sessionData } = await supabase.auth.getSession();
-  const token = sessionData?.session?.access_token;
+  const token = localStorage.getItem("apex_token");
 
   const headers = new Headers();
   headers.set("Content-Type", "application/json");

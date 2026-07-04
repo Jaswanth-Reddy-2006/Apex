@@ -4,6 +4,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { CheckCircle2, Circle, Key, ExternalLink, Loader2 } from "lucide-react";
 import { listIntegrations, listMyOrganizations, connectVercelToken } from "@/lib/api.functions";
 import { INTEGRATIONS, type IntegrationDefinition } from "@/lib/integrations-catalog";
+import { useOrg } from "@/lib/org-context";
 import { PageHeader } from "@/components/app/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -35,16 +36,17 @@ const CATEGORY_LABELS: Record<IntegrationDefinition["category"], string> = {
 };
 
 function IntegrationsPage() {
+  const { activeOrg } = useOrg();
   const qc = useQueryClient();
   const fn = useServerFn(listIntegrations);
-  const orgsFn = useServerFn(listMyOrganizations);
   const connectVercelFn = useServerFn(connectVercelToken);
-
-  const { data } = useQuery({ queryKey: ["integrations"], queryFn: () => fn() });
-  const { data: orgs } = useQuery({ queryKey: ["organizations"], queryFn: () => orgsFn() });
-
+  
+  const { data } = useQuery({ 
+    queryKey: ["integrations", activeOrg?.organization_id], 
+    queryFn: () => fn({ organization_id: activeOrg?.organization_id! }),
+    enabled: !!activeOrg
+  });
   const connected = new Map((data ?? []).map((r) => [r.provider, r]));
-  const activeOrg = orgs?.[0]?.id || "";
 
   // Vercel token dialog state
   const [vercelDialogOpen, setVercelDialogOpen] = useState(false);
@@ -53,7 +55,7 @@ function IntegrationsPage() {
   const vercelConnect = useMutation({
     mutationFn: () =>
       connectVercelFn({
-        data: { token: vercelToken.trim(), organization_id: activeOrg },
+        data: { token: vercelToken.trim(), organization_id: activeOrg?.organization_id! },
       }),
     onSuccess: (result) => {
       toast.success(`Vercel connected as @${result.username}!`);
@@ -82,14 +84,16 @@ function IntegrationsPage() {
         toast.error("Please add VITE_GITHUB_CLIENT_ID to your frontend/.env file.");
         return;
       }
-      if (!activeOrg) {
-        toast.error("No active organization found. Please create one first.");
+      if (!activeOrg?.organization_id) {
+        toast.error("No active organization found. Please register or join an organization first.");
         return;
       }
+
       const redirectUri = encodeURIComponent(`${window.location.origin}/integrations-callback`);
-      const url = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&scope=repo,user&state=${activeOrg}`;
+      const githubOAuthUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&scope=repo,user&state=${activeOrg.organization_id}`;
+      
       toast.loading("Redirecting to GitHub for authorization...");
-      window.location.href = url;
+      window.location.href = githubOAuthUrl;
 
     } else if (item.id === "vercel") {
       if (isConnected) {
@@ -97,7 +101,8 @@ function IntegrationsPage() {
         toast.success(`Already connected to Vercel as: ${conn?.display_name || "Authorized User"}`);
         return;
       }
-      if (!activeOrg) {
+      
+      if (!activeOrg?.organization_id) {
         toast.error("No active organization found. Please create one first.");
         return;
       }
@@ -108,14 +113,13 @@ function IntegrationsPage() {
       if (vercelClientId && vercelSlug) {
         // ✅ OAuth mode — user clicks Connect → redirected to Vercel → comes back automatically
         const redirectUri = encodeURIComponent(`${window.location.origin}/integrations-callback`);
-        const vercelOAuthUrl = `https://vercel.com/integrations/${vercelSlug}/new?redirect_uri=${redirectUri}&state=${activeOrg}_vercel`;
+        const vercelOAuthUrl = `https://vercel.com/integrations/${vercelSlug}/new?redirect_uri=${redirectUri}&state=${activeOrg.organization_id}_vercel`;
         toast.loading("Redirecting to Vercel for authorization...");
         window.location.href = vercelOAuthUrl;
       } else {
         // 🔑 Fallback — paste token manually (works without an OAuth app)
         setVercelDialogOpen(true);
       }
-
     } else {
       toast.info(`${item.name} integration will be enabled soon.`);
     }

@@ -14,11 +14,10 @@ import {
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { ThemeToggle } from "./theme-toggle";
 import { useAuth } from "@/lib/auth-context";
-import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
 
 export function AppHeader({ children }: { children?: ReactNode }) {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const navigate = useNavigate();
   const qc = useQueryClient();
 
@@ -29,9 +28,7 @@ export function AppHeader({ children }: { children?: ReactNode }) {
       .toUpperCase() ?? "??";
 
   const handleSignOut = async () => {
-    await qc.cancelQueries();
-    qc.clear();
-    await supabase.auth.signOut();
+    logout();
     navigate({ to: "/auth", replace: true });
   };
 

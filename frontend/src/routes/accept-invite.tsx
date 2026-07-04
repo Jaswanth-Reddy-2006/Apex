@@ -8,7 +8,11 @@ import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { acceptInvitation, lookupInvitation } from "@/lib/api.functions";
-import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/lib/auth-context";
+import { createClientFn } from "@/lib/api-client";
+
+const apiLogin = createClientFn("login", "POST");
+const apiSignup = createClientFn("signup", "POST");
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -33,15 +37,11 @@ function AcceptInvitePage() {
   const [sessionUserEmail, setSessionUserEmail] = useState<string | null>(null);
   const [accepting, setAccepting] = useState(false);
 
+  const { user, setToken } = useAuth();
+  
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      setSessionUserEmail(data.session?.user.email ?? null);
-    });
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => {
-      setSessionUserEmail(s?.user.email ?? null);
-    });
-    return () => sub.subscription.unsubscribe();
-  }, []);
+    setSessionUserEmail(user?.email ?? null);
+  }, [user]);
 
   const { data: invitation, isLoading } = useQuery({
     queryKey: ["invitation", token],
@@ -191,19 +191,22 @@ function InlineSignUp({ email }: { email: string }) {
     defaultValues: { email, fullName: "", password: "" },
   });
   const [loading, setLoading] = useState(false);
+  const { setToken } = useAuth();
   const onSubmit = form.handleSubmit(async (v) => {
     setLoading(true);
-    const { error } = await supabase.auth.signUp({
-      email: v.email,
-      password: v.password,
-      options: {
-        emailRedirectTo: `${window.location.origin}/dashboard`,
-        data: { full_name: v.fullName },
-      },
-    });
-    setLoading(false);
-    if (error) toast.error(error.message);
-    else toast.success("Account created — you can now accept.");
+    try {
+      const res = await apiSignup({
+        email: v.email,
+        password: v.password,
+        fullName: v.fullName,
+      });
+      setToken(res.token, res.user);
+      toast.success("Account created — you can now accept.");
+    } catch (e: any) {
+      toast.error(e.message || "Sign up failed");
+    } finally {
+      setLoading(false);
+    }
   });
   return (
     <form onSubmit={onSubmit} className="space-y-3">
@@ -236,11 +239,17 @@ function InlineSignIn({ email }: { email: string }) {
     defaultValues: { email, password: "" },
   });
   const [loading, setLoading] = useState(false);
+  const { setToken } = useAuth();
   const onSubmit = form.handleSubmit(async (v) => {
     setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword(v);
-    setLoading(false);
-    if (error) toast.error(error.message);
+    try {
+      const res = await apiLogin({ email: v.email, password: v.password });
+      setToken(res.token, res.user);
+    } catch (e: any) {
+      toast.error(e.message || "Sign in failed");
+    } finally {
+      setLoading(false);
+    }
   });
   return (
     <form onSubmit={onSubmit} className="space-y-3">
