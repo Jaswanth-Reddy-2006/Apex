@@ -17,6 +17,8 @@ import {
   Bot,
   User as UserIcon,
   Paperclip,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from "lucide-react";
 
 import { PageHeader, EmptyState } from "@/components/app/page-header";
@@ -148,6 +150,7 @@ function ProjectChat({
 
   const [activeId, setActiveId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
   const convsQ = useQuery({
     queryKey: ["chat-convs", projectId],
@@ -176,11 +179,15 @@ function ProjectChat({
 
   const results = search.length > 1 ? (searchQ.data ?? []) : [];
 
+  const activeConv = (convsQ.data ?? []).find(c => c.id === activeId);
+  const activeConvTitle = activeConv?.title || "";
+
   return (
     <div className="grid flex-1 grid-cols-12 gap-4 overflow-hidden">
       {/* Conversations sidebar */}
-      <Card className="col-span-12 flex flex-col overflow-hidden md:col-span-4 lg:col-span-3">
-        <div className="border-b border-border p-3">
+      {isSidebarOpen && (
+        <Card className="col-span-12 flex flex-col overflow-hidden md:col-span-4 lg:col-span-3">
+          <div className="border-b border-border p-3">
           <Button
             className="w-full"
             onClick={() => createMut.mutate()}
@@ -301,9 +308,19 @@ function ProjectChat({
           </div>
         </ScrollArea>
       </Card>
+      )}
 
       {/* Chat window */}
-      <Card className="col-span-12 flex flex-col overflow-hidden md:col-span-8 lg:col-span-9">
+      <Card className={cn(
+        "flex flex-col overflow-hidden transition-all",
+        isSidebarOpen ? "col-span-12 md:col-span-8 lg:col-span-9" : "col-span-12"
+      )}>
+        <div className="flex items-center gap-2 border-b border-border p-2">
+          <Button variant="ghost" size="icon" onClick={() => setIsSidebarOpen(!isSidebarOpen)} title={isSidebarOpen ? "Hide sidebar" : "Show sidebar"}>
+            {isSidebarOpen ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeftOpen className="h-4 w-4" />}
+          </Button>
+          {activeConvTitle && <span className="text-sm font-medium">{activeConvTitle}</span>}
+        </div>
         {activeId ? (
           <ChatWindow
             key={activeId}

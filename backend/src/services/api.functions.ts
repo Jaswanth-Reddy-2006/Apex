@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireAuth } from "../lib/auth-middleware.js";
+import { generateEmbedding } from "./rag.js";
 
 const slugify = (s: string) =>
   s
@@ -707,12 +708,40 @@ export const listGithubRepositories = createServerFn({ method: "GET" })
         return { repositories: [] };
       }
 
+      const formattedRepos = repos.map((r: any) => ({
+        name: r.name,
+        full_name: r.full_name,
+        html_url: r.html_url,
+      }));
+
+      // Background sync RAG data
+      Promise.resolve().then(async () => {
+        try {
+          // Clear old data
+          await context.prisma.integrationDataNode.deleteMany({
+            where: { organization_id, provider: "github" }
+          });
+          
+          for (const repo of formattedRepos) {
+            const content = `GitHub Repository: ${repo.full_name}. URL: ${repo.html_url}`;
+            const embedding = await generateEmbedding(content);
+            await context.prisma.integrationDataNode.create({
+              data: {
+                organization_id,
+                project_id: "global", // Can be refined later
+                provider: "github",
+                content,
+                embedding,
+              }
+            });
+          }
+        } catch (e) {
+          console.error("RAG Sync Error (GitHub):", e);
+        }
+      });
+
       return {
-        repositories: repos.map((r: any) => ({
-          name: r.name,
-          full_name: r.full_name,
-          html_url: r.html_url,
-        })),
+        repositories: formattedRepos,
       };
     } catch (err) {
       console.error("[GitHub API] Error listing repositories:", err);
@@ -725,7 +754,7 @@ export const listGithubRepositories = createServerFn({ method: "GET" })
 // ================================================================
 
 export const connectVercelToken = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((input) =>
     z.object({
       token: z.string().min(10),
@@ -751,7 +780,7 @@ export const connectVercelToken = createServerFn({ method: "POST" })
     const vercelUsername = userData.user?.username || userData.user?.email || "vercel-user";
 
     // 2. Upsert integration connection in MongoDB
-    await prisma.integrationConnection.upsert({
+    await context.prisma.integrationConnection.upsert({
       where: {
         organization_id_provider: {
           organization_id,
@@ -781,7 +810,7 @@ export const connectVercelToken = createServerFn({ method: "POST" })
 // OAuth flow — used when VERCEL_CLIENT_ID + VERCEL_CLIENT_SECRET are configured
 // Any user clicks "Connect" → redirected to Vercel → comes back with code → this exchanges it
 export const connectVercelOAuth = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((input) =>
     z.object({
       code: z.string(),
@@ -840,7 +869,7 @@ export const connectVercelOAuth = createServerFn({ method: "POST" })
     const vercelUsername = userData.user?.username || userData.user?.email || "vercel-user";
 
     // 3. Upsert integration connection in MongoDB
-    await prisma.integrationConnection.upsert({
+    await context.prisma.integrationConnection.upsert({
       where: {
         organization_id_provider: { organization_id, provider: "vercel" },
       },
@@ -865,16 +894,16 @@ export const connectVercelOAuth = createServerFn({ method: "POST" })
   });
 
 export const listVercelProjects = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((input) =>
     z.object({
       organization_id: z.string(),
     }).parse(input),
   )
-  .handler(async ({ data }) => {
+  .handler(async ({ data, context }) => {
     const { organization_id } = data;
 
-    const connection = await prisma.integrationConnection.findUnique({
+    const connection = await context.prisma.integrationConnection.findUnique({
       where: {
         organization_id_provider: {
           organization_id,
@@ -904,15 +933,42 @@ export const listVercelProjects = createServerFn({ method: "GET" })
       const body: any = await response.json();
       const projects = body.projects ?? [];
 
+      const formattedProjects = projects.map((p: any) => ({
+        id: p.id,
+        name: p.name,
+        url: `https://${p.name}.vercel.app`,
+        framework: p.framework ?? "unknown",
+        latestDeployment: p.latestDeployments?.[0]?.readyState ?? "unknown",
+        updatedAt: p.updatedAt,
+      }));
+
+      // Background sync RAG data
+      Promise.resolve().then(async () => {
+        try {
+          await context.prisma.integrationDataNode.deleteMany({
+            where: { organization_id, provider: "vercel" }
+          });
+          
+          for (const proj of formattedProjects) {
+            const content = `Vercel Project: ${proj.name}. Framework: ${proj.framework}. URL: ${proj.url}. Latest Deployment Status: ${proj.latestDeployment}.`;
+            const embedding = await generateEmbedding(content);
+            await context.prisma.integrationDataNode.create({
+              data: {
+                organization_id,
+                project_id: "global",
+                provider: "vercel",
+                content,
+                embedding,
+              }
+            });
+          }
+        } catch (e) {
+          console.error("RAG Sync Error (Vercel):", e);
+        }
+      });
+
       return {
-        projects: projects.map((p: any) => ({
-          id: p.id,
-          name: p.name,
-          url: `https://${p.name}.vercel.app`,
-          framework: p.framework ?? "unknown",
-          latestDeployment: p.latestDeployments?.[0]?.readyState ?? "unknown",
-          updatedAt: p.updatedAt,
-        })),
+        projects: formattedProjects,
       };
     } catch (err) {
       console.error("[Vercel API] Error listing projects:", err);
