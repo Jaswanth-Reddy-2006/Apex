@@ -54,3 +54,7 @@ export const simulateAgentTransaction = createClientFn("simulateAgentTransaction
 export const approveEscalatedTransaction = createClientFn("approveEscalatedTransaction", "POST") as typeof backendApi.approveEscalatedTransaction;
 export const seedPaymentsDemo = createClientFn("seedPaymentsDemo", "POST") as typeof backendApi.seedPaymentsDemo;
 export const toggleWalletAutoDelegation = createClientFn("toggleWalletAutoDelegation", "POST") as typeof backendApi.toggleWalletAutoDelegation;
+export const scrapeWebsite = createClientFn("scrapeWebsite", "POST") as typeof backendApi.scrapeWebsite;
+export const listScrapedWebsites = createClientFn("listScrapedWebsites", "GET") as typeof backendApi.listScrapedWebsites;
+export const deleteScrapedWebsite = createClientFn("deleteScrapedWebsite", "POST") as typeof backendApi.deleteScrapedWebsite;
+
