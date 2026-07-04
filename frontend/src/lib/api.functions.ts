@@ -40,3 +40,6 @@ export const connectNotion = createClientFn("connectNotion", "POST") as typeof b
 export const connectNotionOAuth = createClientFn("connectNotionOAuth", "POST") as typeof backendApi.connectNotionOAuth;
 export const listNotionPages = createClientFn("listNotionPages", "GET") as typeof backendApi.listNotionPages;
 export const disconnectIntegration = createClientFn("disconnectIntegration", "POST") as typeof backendApi.disconnectIntegration;
+export const connectGoogleDrive = createClientFn("connectGoogleDrive", "POST") as typeof backendApi.connectGoogleDrive;
+export const connectGoogleDriveOAuth = createClientFn("connectGoogleDriveOAuth", "POST") as typeof backendApi.connectGoogleDriveOAuth;
+export const listGoogleDriveFiles = createClientFn("listGoogleDriveFiles", "GET") as typeof backendApi.listGoogleDriveFiles;

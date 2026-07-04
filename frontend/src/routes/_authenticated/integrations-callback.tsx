@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { Loader2, AlertCircle, CheckCircle2 } from "lucide-react";
-import { connectGithub, connectNotionOAuth } from "@/lib/api.functions";
+import { connectGithub, connectNotionOAuth, connectGoogleDriveOAuth } from "@/lib/api.functions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 
@@ -19,6 +19,7 @@ function IntegrationsCallbackPage() {
   const search = useSearch({ from: "/_authenticated/integrations-callback" });
   const connectGithubFn = useServerFn(connectGithub);
   const connectNotionOAuthFn = useServerFn(connectNotionOAuth);
+  const connectGoogleDriveOAuthFn = useServerFn(connectGoogleDriveOAuth);
 
   const [status, setStatus] = useState<"loading" | "success" | "error">("loading");
   const [errorMessage, setErrorMessage] = useState("");
@@ -26,7 +27,8 @@ function IntegrationsCallbackPage() {
 
   const stateStr = search.state || "";
   const isNotion = stateStr.startsWith("notion:");
-  const providerName = isNotion ? "Notion" : "GitHub";
+  const isGDrive = stateStr.startsWith("gdrive:");
+  const providerName = isNotion ? "Notion" : isGDrive ? "Google Drive" : "GitHub";
 
   useEffect(() => {
     let active = true;
@@ -38,7 +40,11 @@ function IntegrationsCallbackPage() {
         return;
       }
 
-      const organization_id = isNotion ? stateStr.replace("notion:", "") : stateStr;
+      const organization_id = isNotion 
+        ? stateStr.replace("notion:", "") 
+        : isGDrive 
+        ? stateStr.replace("gdrive:", "") 
+        : stateStr;
 
       try {
         if (isNotion) {
@@ -53,6 +59,19 @@ function IntegrationsCallbackPage() {
           } else {
             setStatus("error");
             setErrorMessage("Failed to establish secure Notion connection.");
+          }
+        } else if (isGDrive) {
+          const result = await connectGoogleDriveOAuthFn({
+            data: { code: search.code, organization_id },
+          });
+          if (!active) return;
+          if (result && result.success) {
+            setStatus("success");
+            setUsername(result.username);
+            setTimeout(() => { if (active) navigate({ to: "/integrations" }); }, 2000);
+          } else {
+            setStatus("error");
+            setErrorMessage("Failed to establish secure Google Drive connection.");
           }
         } else {
           const result = await connectGithubFn({
@@ -80,7 +99,7 @@ function IntegrationsCallbackPage() {
     return () => {
       active = false;
     };
-  }, [search.code, search.state, connectGithubFn, connectNotionOAuthFn, navigate, isNotion, stateStr, providerName]);
+  }, [search.code, search.state, connectGithubFn, connectNotionOAuthFn, connectGoogleDriveOAuthFn, navigate, isNotion, isGDrive, stateStr, providerName]);
 
   return (
     <div className="flex min-h-[60vh] items-center justify-center p-4">
@@ -111,7 +130,7 @@ function IntegrationsCallbackPage() {
               <div className="space-y-1">
                 <p className="text-base font-semibold text-foreground">Connected Successfully!</p>
                 <p className="text-sm text-muted-foreground">
-                  {isNotion ? "Connected Notion Workspace: " : "Connected GitHub profile: "}
+                  {isNotion ? "Connected Notion Workspace: " : isGDrive ? "Connected Google Drive: " : "Connected GitHub profile: "}
                   <span className="font-mono text-primary">{username}</span>
                 </p>
                 <p className="text-xs text-muted-foreground pt-2">

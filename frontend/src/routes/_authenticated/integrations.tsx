@@ -52,6 +52,7 @@ function IntegrationsPage() {
   const fn = useServerFn(listIntegrations);
   const connectGitlabFn = useServerFn(connectGitlab);
   const connectNotionFn = useServerFn(connectNotion);
+  const connectGdriveFn = useServerFn(connectGoogleDrive);
   const queryClient = useQueryClient();
 
   useEffect(() => {
@@ -68,6 +69,11 @@ function IntegrationsPage() {
   const [notionToken, setNotionToken] = useState("");
   const [notionWorkspace, setNotionWorkspace] = useState("");
   const [connectingNotion, setConnectingNotion] = useState(false);
+
+  const [gdriveOpen, setGdriveOpen] = useState(false);
+  const [gdriveToken, setGdriveToken] = useState("");
+  const [gdriveUser, setGdriveUser] = useState("");
+  const [connectingGdrive, setConnectingGdrive] = useState(false);
 
   const [selectedManageIntegration, setSelectedManageIntegration] = useState<string | null>(null);
   const disconnectFn = useServerFn(disconnectIntegration);
@@ -107,6 +113,14 @@ function IntegrationsPage() {
     queryKey: ["notion-pages-manage", activeOrg?.organization_id],
     queryFn: () => listNotionPagesFn({ organization_id: activeOrg?.organization_id! }),
     enabled: selectedManageIntegration === "notion" && !!activeOrg,
+  });
+
+  const listGdriveFn = useServerFn(listGoogleDriveFiles);
+
+  const googleFilesQuery = useQuery({
+    queryKey: ["gdrive-files-manage", activeOrg?.organization_id],
+    queryFn: () => listGdriveFn({ organization_id: activeOrg?.organization_id! }),
+    enabled: selectedManageIntegration === "gdrive" && !!activeOrg,
   });
 
   const { data, isLoading } = useQuery({ 
@@ -207,6 +221,31 @@ function IntegrationsPage() {
       setTimeout(() => {
         toast.dismiss(toastId);
       }, 5000);
+    } else if (item.id === "gdrive") {
+      if (isConnected) {
+        const conn = connected.get("gdrive");
+        toast.success(`Already connected to Google Drive: ${conn?.display_name || "Authorized Drive"}`);
+        return;
+      }
+      if (!activeOrg?.organization_id) {
+        toast.error("No active organization found.");
+        return;
+      }
+      const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || "";
+      if (!clientId) {
+        setGdriveToken("");
+        setGdriveUser("");
+        setGdriveOpen(true);
+        return;
+      }
+      const redirectUri = encodeURIComponent(`${window.location.origin}/integrations-callback`);
+      const googleOAuthUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=code&scope=https://www.googleapis.com/auth/drive.readonly%20https://www.googleapis.com/auth/userinfo.profile&access_type=offline&prompt=consent&state=gdrive:${activeOrg.organization_id}`;
+      
+      const toastId = toast.loading("Redirecting to Google for authorization...");
+      window.location.href = googleOAuthUrl;
+      setTimeout(() => {
+        toast.dismiss(toastId);
+      }, 5000);
     } else {
       toast.info(`${item.name} integration will be enabled soon.`);
     }
@@ -259,6 +298,31 @@ function IntegrationsPage() {
       toast.error(err.message || "Failed to connect Notion");
     } finally {
       setConnectingNotion(false);
+    }
+  };
+
+  const handleGoogleDriveConnect = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!gdriveToken) {
+      toast.error("Please enter a Google Access Token.");
+      return;
+    }
+    setConnectingGdrive(true);
+    try {
+      await connectGdriveFn({
+        data: {
+          username: gdriveUser || "Google User",
+          token: gdriveToken,
+          organization_id: activeOrg?.organization_id!,
+        },
+      });
+      toast.success("Google Drive connected successfully!");
+      queryClient.invalidateQueries({ queryKey: ["integrations", activeOrg?.organization_id] });
+      setGdriveOpen(false);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to connect Google Drive");
+    } finally {
+      setConnectingGdrive(false);
     }
   };
 
@@ -488,13 +552,14 @@ function IntegrationsPage() {
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-semibold text-foreground flex items-center gap-1.5">
                   <BookOpen className="h-4 w-4 text-muted-foreground" />
-                  {selectedManageIntegration === "notion" ? "Synced Workspace Pages" : "Linked Repositories"}
+                  {selectedManageIntegration === "notion" ? "Synced Workspace Pages" : selectedManageIntegration === "gdrive" ? "Synced Google Drive Files" : "Linked Repositories"}
                 </h3>
                 <Badge variant="secondary" className="font-mono text-xs">
                   {selectedManageIntegration === "github" && (githubReposQuery.data?.repositories?.length ?? 0)}
                   {selectedManageIntegration === "gitlab" && (gitlabReposQuery.data?.repositories?.length ?? 0)}
                   {selectedManageIntegration === "notion" && (notionPagesQuery.data?.pages?.length ?? 0)}
-                  {selectedManageIntegration && !["github", "gitlab", "notion"].includes(selectedManageIntegration) && 0}
+                  {selectedManageIntegration === "gdrive" && (googleFilesQuery.data?.files?.length ?? 0)}
+                  {selectedManageIntegration && !["github", "gitlab", "notion", "gdrive"].includes(selectedManageIntegration) && 0}
                   {" resources"}
                 </Badge>
               </div>
@@ -576,8 +641,75 @@ function IntegrationsPage() {
                   )}
                 </div>
               )}
+
+              {/* Google Drive loading/list */}
+              {selectedManageIntegration === "gdrive" && (
+                <div className="space-y-2 max-h-[250px] overflow-y-auto pr-1">
+                  {googleFilesQuery.isLoading ? (
+                    <div className="space-y-2 py-4">
+                      <Skeleton className="h-8 w-full" />
+                      <Skeleton className="h-8 w-full" />
+                    </div>
+                  ) : googleFilesQuery.data?.files?.length ? (
+                    googleFilesQuery.data.files.map((file: any) => (
+                      <div key={file.id} className="flex items-center justify-between p-2.5 rounded-lg border border-border bg-card text-sm">
+                        <div className="flex flex-col space-y-0.5">
+                          <span className="font-medium text-foreground">{file.name}</span>
+                          {file.modifiedTime && (
+                            <span className="text-[10px] text-muted-foreground">Modified: {new Date(file.modifiedTime).toLocaleDateString()}</span>
+                          )}
+                        </div>
+                        <a href={file.url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline flex items-center gap-1 text-xs">
+                          Open File <ExternalLink className="h-3 w-3" />
+                        </a>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-xs text-muted-foreground text-center py-4">No accessible files found in this Google Drive connection.</p>
+                  )}
+                </div>
+              )}
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={gdriveOpen} onOpenChange={setGdriveOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Connect Google Drive</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleGoogleDriveConnect} className="space-y-4">
+            <div>
+              <Label htmlFor="gd-user">Display Name / Email (Optional)</Label>
+              <Input
+                id="gd-user"
+                value={gdriveUser}
+                onChange={(e) => setGdriveUser(e.target.value)}
+                placeholder="e.g. personal-drive"
+              />
+            </div>
+            <div>
+              <Label htmlFor="gd-token">Google Access Token</Label>
+              <Input
+                id="gd-token"
+                type="password"
+                value={gdriveToken}
+                onChange={(e) => setGdriveToken(e.target.value)}
+                placeholder="ya29.a0AfH6SM..."
+              />
+              <p className="mt-1 text-xs text-muted-foreground">
+                Enter a temporary Google Access Token with `drive.readonly` access to connect manual drive resources.
+              </p>
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setGdriveOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={connectingGdrive}>
+                {connectingGdrive ? <Loader2 className="h-4 w-4 animate-spin" /> : "Connect Drive"}
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
     </div>
