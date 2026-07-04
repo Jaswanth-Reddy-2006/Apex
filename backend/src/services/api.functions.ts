@@ -158,6 +158,7 @@ export const createProject = createServerFn({ method: "POST" })
         organization_id: z.string().uuid(),
         name: z.string().trim().min(2).max(80),
         description: z.string().trim().max(500).optional(),
+        repository_url: z.string().trim().optional(),
       })
       .parse(input),
   )
@@ -169,7 +170,9 @@ export const createProject = createServerFn({ method: "POST" })
         name: data.name,
         slug: slugify(data.name),
         description: data.description ?? null,
+        repository_url: data.repository_url || null,
         created_by: context.userId,
+        status: "active",
       })
       .select()
       .single();
@@ -681,4 +684,61 @@ export const connectGithub = createServerFn({ method: "POST" })
 
     return { success: true, username: githubUsername };
   });
+
+export const listGithubRepositories = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) =>
+    z.object({
+      organization_id: z.string(),
+    }).parse(input),
+  )
+  .handler(async ({ data }) => {
+    const { organization_id } = data;
+    
+    const connection = await prisma.integrationConnection.findUnique({
+      where: {
+        organization_id_provider: {
+          organization_id,
+          provider: "github",
+        },
+      },
+    });
+
+    if (!connection || connection.status !== "connected" || !connection.credentials_vault_key) {
+      return { repositories: [] };
+    }
+
+    const accessToken = connection.credentials_vault_key;
+
+    try {
+      const response = await fetch("https://api.github.com/user/repos?per_page=100&sort=updated", {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          Accept: "application/json",
+          "User-Agent": "APEX-App",
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to fetch repository list from GitHub API.");
+      }
+
+      const repos: any = await response.json();
+      if (!Array.isArray(repos)) {
+        return { repositories: [] };
+      }
+
+      return {
+        repositories: repos.map((r: any) => ({
+          name: r.name,
+          full_name: r.full_name,
+          html_url: r.html_url,
+        })),
+      };
+    } catch (err) {
+      console.error("[GitHub API] Error listing repositories:", err);
+      return { repositories: [] };
+    }
+  });
+
 

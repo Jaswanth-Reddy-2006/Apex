@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { listProjects, createProject, listMyOrganizations } from "@/lib/api.functions";
+import { listProjects, createProject, listMyOrganizations, listGithubRepositories } from "@/lib/api.functions";
 import { PageHeader, EmptyState } from "@/components/app/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -40,12 +40,14 @@ const schema = z.object({
   organization_id: z.string().uuid("Pick an organization"),
   name: z.string().trim().min(2).max(80),
   description: z.string().trim().max(500).optional(),
+  repository_url: z.string().trim().optional(),
 });
 
 function ProjectsPage() {
   const listFn = useServerFn(listProjects);
   const orgsFn = useServerFn(listMyOrganizations);
   const createFn = useServerFn(createProject);
+  const reposFn = useServerFn(listGithubRepositories);
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
 
@@ -54,8 +56,18 @@ function ProjectsPage() {
 
   const form = useForm<z.infer<typeof schema>>({
     resolver: zodResolver(schema),
-    defaultValues: { organization_id: "", name: "", description: "" },
+    defaultValues: { organization_id: "", name: "", description: "", repository_url: "" },
   });
+
+  const selectedOrgId = form.watch("organization_id");
+
+  const { data: githubData, isLoading: loadingRepos } = useQuery({
+    queryKey: ["github-repos", selectedOrgId],
+    queryFn: () => reposFn({ data: { organization_id: selectedOrgId } }),
+    enabled: !!selectedOrgId,
+  });
+
+  const githubRepos = githubData?.repositories ?? [];
 
   const create = useMutation({
     mutationFn: (values: z.infer<typeof schema>) => createFn({ data: values }),
@@ -128,6 +140,38 @@ function ProjectsPage() {
                   <Label htmlFor="p-desc">Description</Label>
                   <Textarea id="p-desc" rows={3} {...form.register("description")} />
                 </div>
+                {selectedOrgId && (
+                  <div className="space-y-1">
+                    <Label>Linked GitHub Repository (Optional)</Label>
+                    {loadingRepos ? (
+                      <div className="flex items-center gap-2 mt-1 text-sm text-muted-foreground">
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        <span>Loading repositories...</span>
+                      </div>
+                    ) : githubRepos.length > 0 ? (
+                      <Select
+                        value={form.watch("repository_url")}
+                        onValueChange={(v) => form.setValue("repository_url", v)}
+                      >
+                        <SelectTrigger className="mt-1">
+                          <SelectValue placeholder="Select a repository" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="">None / Manual URL</SelectItem>
+                          {githubRepos.map((r: any) => (
+                            <SelectItem key={r.full_name} value={r.html_url}>
+                              {r.full_name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        No connected repositories found. Connect GitHub under the "Integrations" page.
+                      </p>
+                    )}
+                  </div>
+                )}
                 <DialogFooter>
                   <Button type="submit" disabled={create.isPending}>
                     {create.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Create project"}
@@ -172,6 +216,13 @@ function ProjectsPage() {
                 <p className="line-clamp-2 text-sm text-muted-foreground">
                   {p.description ?? "No description"}
                 </p>
+                {p.repository_url && (
+                  <p className="mt-2 text-xs text-primary font-medium hover:underline truncate">
+                    <a href={p.repository_url} target="_blank" rel="noopener noreferrer">
+                      🔗 {p.repository_url.replace("https://github.com/", "")}
+                    </a>
+                  </p>
+                )}
                 <p className="mt-3 text-xs text-muted-foreground">
                   Created {new Date(p.created_at).toLocaleDateString()}
                 </p>
