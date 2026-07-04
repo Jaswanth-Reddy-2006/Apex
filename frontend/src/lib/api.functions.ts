@@ -31,4 +31,7 @@ export const getMyProfile = createClientFn("getMyProfile", "GET") as typeof back
 export const updateMyProfile = createClientFn("updateMyProfile", "POST") as typeof backendApi.updateMyProfile;
 export const connectGithub = createClientFn("connectGithub", "POST") as typeof backendApi.connectGithub;
 export const listGithubRepositories = createClientFn("listGithubRepositories", "GET") as typeof backendApi.listGithubRepositories;
+export const connectVercel = createClientFn("connectVercel", "POST") as typeof backendApi.connectVercel;
+export const listVercelProjects = createClientFn("listVercelProjects", "GET") as typeof backendApi.listVercelProjects;
+
 
