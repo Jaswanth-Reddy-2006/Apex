@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireAuth } from "../lib/auth-middleware.js";
 import { generateEmbedding } from "./rag.js";
+import { scrapeAndChunk } from "./website.js";
 
 const slugify = (s: string) =>
   s
@@ -1915,6 +1916,182 @@ export const listGoogleDriveFiles = createServerFn({ method: "GET" })
         files: mockFiles,
       };
     }
+  });
+
+export const scrapeWebsite = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((input) =>
+    z.object({
+      url: z.string().trim().url(),
+      organization_id: z.string(),
+    }).parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    const { url, organization_id } = data;
+    
+    // Find or create the single website connection
+    let connection = await context.prisma.integrationConnection.findFirst({
+      where: {
+        organization_id,
+        provider: "website",
+        connected_by: context.userId,
+      }
+    });
+
+    let currentWebsites: Array<{ url: string; title: string; chunks_count: number; created_at: string }> = [];
+    if (connection && connection.metadata) {
+      try {
+        currentWebsites = JSON.parse(connection.metadata);
+      } catch (e) {
+        currentWebsites = [];
+      }
+    }
+
+    if (currentWebsites.some((w: any) => w.url.toLowerCase() === url.toLowerCase())) {
+      throw new Error("This website has already been scraped and indexed.");
+    }
+
+    console.log(`[Website Scraper] Scraping and indexing: ${url}`);
+    
+    // Run the scraper
+    const { title, chunks } = await scrapeAndChunk(url);
+    
+    // Generate embeddings and store nodes in the database
+    for (const chunk of chunks) {
+      const embedding = await generateEmbedding(chunk);
+      await context.prisma.integrationDataNode.create({
+        data: {
+          organization_id,
+          project_id: "global",
+          provider: "website",
+          content: chunk,
+          embedding,
+        }
+      });
+    }
+
+    // Add to the websites list
+    currentWebsites.push({
+      url,
+      title,
+      chunks_count: chunks.length,
+      created_at: new Date().toISOString(),
+    });
+
+    if (connection) {
+      connection = await context.prisma.integrationConnection.update({
+        where: { id: connection.id },
+        data: {
+          status: "connected",
+          metadata: JSON.stringify(currentWebsites),
+          display_name: `${currentWebsites.length} website(s) indexed`,
+        }
+      });
+    } else {
+      connection = await context.prisma.integrationConnection.create({
+        data: {
+          organization_id,
+          provider: "website",
+          connected_by: context.userId,
+          status: "connected",
+          credentials_vault_key: "embedded_source",
+          display_name: `1 website indexed`,
+          metadata: JSON.stringify(currentWebsites),
+        }
+      });
+    }
+
+    return { success: true, connection };
+  });
+
+export const listScrapedWebsites = createServerFn({ method: "GET" })
+  .middleware([requireAuth])
+  .inputValidator((input) =>
+    z.object({
+      organization_id: z.string(),
+    }).parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    const { organization_id } = data;
+    const connection = await context.prisma.integrationConnection.findFirst({
+      where: {
+        organization_id,
+        provider: "website",
+        connected_by: context.userId,
+      }
+    });
+
+    if (!connection || !connection.metadata) {
+      return [];
+    }
+
+    try {
+      return JSON.parse(connection.metadata);
+    } catch (e) {
+      return [];
+    }
+  });
+
+export const deleteScrapedWebsite = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((input) =>
+    z.object({
+      url: z.string().trim().url(),
+      organization_id: z.string(),
+    }).parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    const { url, organization_id } = data;
+    
+    const connection = await context.prisma.integrationConnection.findFirst({
+      where: {
+        organization_id,
+        provider: "website",
+        connected_by: context.userId,
+      }
+    });
+
+    if (!connection) {
+      throw new Error("No website integration found");
+    }
+
+    let currentWebsites: Array<{ url: string; title: string; chunks_count: number; created_at: string }> = [];
+    try {
+      currentWebsites = JSON.parse(connection.metadata || "[]");
+    } catch (e) {
+      currentWebsites = [];
+    }
+
+    // Filter out the deleted website
+    const updatedWebsites = currentWebsites.filter((w: any) => w.url.toLowerCase() !== url.toLowerCase());
+
+    // Delete associated data nodes
+    await context.prisma.integrationDataNode.deleteMany({
+      where: {
+        organization_id,
+        provider: "website",
+        content: {
+          contains: `Website URL: ${url}`,
+        }
+      }
+    });
+
+    if (updatedWebsites.length > 0) {
+      await context.prisma.integrationConnection.update({
+        where: { id: connection.id },
+        data: {
+          metadata: JSON.stringify(updatedWebsites),
+          display_name: `${updatedWebsites.length} website(s) indexed`,
+        }
+      });
+    } else {
+      // If no websites left, delete the connection record
+      await context.prisma.integrationConnection.delete({
+        where: { id: connection.id }
+      });
+    }
+
+    return { success: true };
   });
 
 
