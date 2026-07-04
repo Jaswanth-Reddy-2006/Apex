@@ -1,3 +1,4 @@
+// Apex Backend Server - Connected to MongoDB via Prisma ORM
 import path from "path";
 import { fileURLToPath } from "url";
 import express from "express";
