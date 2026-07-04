@@ -1,0 +1,14 @@
+User-agent: *
+Allow: /
+Disallow: /dashboard
+Disallow: /organization
+Disallow: /workspace
+Disallow: /projects
+Disallow: /members
+Disallow: /integrations
+Disallow: /analytics
+Disallow: /notifications
+Disallow: /profile
+Disallow: /billing
+Disallow: /settings
+Disallow: /support

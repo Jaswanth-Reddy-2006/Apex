@@ -1,0 +1,185 @@
+import { createFileRoute } from "@tanstack/react-router";
+import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
+import { FolderKanban, Plus, Loader2 } from "lucide-react";
+import { toast } from "sonner";
+import { z } from "zod";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { listProjects, createProject, listMyOrganizations } from "@/lib/api.functions";
+import { PageHeader, EmptyState } from "@/components/app/page-header";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+
+export const Route = createFileRoute("/_authenticated/projects")({
+  component: ProjectsPage,
+});
+
+const schema = z.object({
+  organization_id: z.string().uuid("Pick an organization"),
+  name: z.string().trim().min(2).max(80),
+  description: z.string().trim().max(500).optional(),
+});
+
+function ProjectsPage() {
+  const listFn = useServerFn(listProjects);
+  const orgsFn = useServerFn(listMyOrganizations);
+  const createFn = useServerFn(createProject);
+  const qc = useQueryClient();
+  const [open, setOpen] = useState(false);
+
+  const { data, isLoading } = useQuery({ queryKey: ["projects"], queryFn: () => listFn() });
+  const { data: orgs } = useQuery({ queryKey: ["organizations"], queryFn: () => orgsFn() });
+
+  const form = useForm<z.infer<typeof schema>>({
+    resolver: zodResolver(schema),
+    defaultValues: { organization_id: "", name: "", description: "" },
+  });
+
+  const create = useMutation({
+    mutationFn: (values: z.infer<typeof schema>) => createFn({ data: values }),
+    onSuccess: () => {
+      toast.success("Project created");
+      qc.invalidateQueries({ queryKey: ["projects"] });
+      qc.invalidateQueries({ queryKey: ["dashboard", "stats"] });
+      setOpen(false);
+      form.reset();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  return (
+    <div className="space-y-8">
+      <PageHeader
+        title="Projects"
+        description="All projects across your organizations."
+        actions={
+          <Dialog open={open} onOpenChange={setOpen}>
+            <DialogTrigger asChild>
+              <Button
+                className="gradient-primary text-primary-foreground"
+                disabled={(orgs ?? []).length === 0}
+              >
+                <Plus className="mr-2 h-4 w-4" /> New project
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Create a project</DialogTitle>
+              </DialogHeader>
+              <form
+                onSubmit={form.handleSubmit((v) => create.mutate(v))}
+                className="space-y-4"
+              >
+                <div>
+                  <Label>Organization</Label>
+                  <Select
+                    value={form.watch("organization_id")}
+                    onValueChange={(v) => form.setValue("organization_id", v, { shouldValidate: true })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select organization" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(orgs ?? []).map((o) => (
+                        <SelectItem key={o.id} value={o.id}>
+                          {o.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {form.formState.errors.organization_id && (
+                    <p className="mt-1 text-xs text-destructive">
+                      {form.formState.errors.organization_id.message}
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <Label htmlFor="p-name">Name</Label>
+                  <Input id="p-name" {...form.register("name")} />
+                  {form.formState.errors.name && (
+                    <p className="mt-1 text-xs text-destructive">
+                      {form.formState.errors.name.message}
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <Label htmlFor="p-desc">Description</Label>
+                  <Textarea id="p-desc" rows={3} {...form.register("description")} />
+                </div>
+                <DialogFooter>
+                  <Button type="submit" disabled={create.isPending}>
+                    {create.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Create project"}
+                  </Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
+        }
+      />
+
+      {isLoading ? (
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Skeleton key={i} className="h-32 w-full" />
+          ))}
+        </div>
+      ) : (data ?? []).length === 0 ? (
+        <EmptyState
+          icon={FolderKanban}
+          title="No projects yet"
+          description={
+            (orgs ?? []).length === 0
+              ? "Create an organization first, then add a project."
+              : "Start by creating your first project."
+          }
+        />
+      ) : (
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {(data ?? []).map((p) => (
+            <Card key={p.id} className="transition hover:shadow-elegant">
+              <CardHeader>
+                <div className="flex items-start justify-between">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary-soft text-primary">
+                    <FolderKanban className="h-5 w-5" />
+                  </div>
+                  <Badge variant="secondary">{p.status}</Badge>
+                </div>
+                <CardTitle className="mt-3">{p.name}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="line-clamp-2 text-sm text-muted-foreground">
+                  {p.description ?? "No description"}
+                </p>
+                <p className="mt-3 text-xs text-muted-foreground">
+                  Created {new Date(p.created_at).toLocaleDateString()}
+                </p>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}

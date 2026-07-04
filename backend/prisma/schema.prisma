@@ -1,0 +1,269 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Profile {
+  id         String   @id
+  email      String
+  full_name  String?
+  avatar_url String?
+  headline   String?
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  @@map("profiles")
+}
+
+model Organization {
+  id             String   @id @default(uuid())
+  name           String
+  slug           String
+  description    String?
+  logo_url       String?
+  domain         String?
+  industry       String?
+  employee_count String?
+  country        String?
+  timezone       String?
+  phone          String?
+  owner_id       String
+  created_at     DateTime @default(now())
+  updated_at     DateTime @updatedAt
+
+  @@map("organizations")
+}
+
+model OrganizationMember {
+  id              String   @id @default(uuid())
+  organization_id String
+  user_id         String
+  role            String
+  status          String
+  phone           String?
+  designation     String?
+  department      String?
+  custom_role_id  String?
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+
+  @@map("organization_members")
+}
+
+model Workspace {
+  id              String   @id @default(uuid())
+  organization_id String
+  name            String
+  slug            String
+  description     String?
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+
+  @@map("workspaces")
+}
+
+model Project {
+  id             String   @id @default(uuid())
+  organization_id String
+  workspace_id   String?
+  name           String
+  slug           String
+  description    String?
+  status         String
+  repository_url String?
+  created_by     String
+  created_at     DateTime @default(now())
+  updated_at     DateTime @updatedAt
+
+  @@map("projects")
+}
+
+model ProjectMember {
+  id         String   @id @default(uuid())
+  project_id String
+  user_id    String
+  role       String
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  @@map("project_members")
+}
+
+model Invitation {
+  id              String   @id @default(uuid())
+  organization_id String
+  email           String
+  role            String
+  status          String
+  created_at      DateTime @default(now())
+  expires_at      DateTime
+  token           String   @unique
+
+  @@map("invitations")
+}
+
+model Role {
+  id              String   @id @default(uuid())
+  organization_id String?
+  name            String
+  description     String?
+  is_system       Boolean  @default(false)
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+
+  @@map("roles")
+}
+
+model Permission {
+  id          String   @id @default(uuid())
+  key         String
+  name        String?
+  description String?
+  category    String
+  created_at  DateTime @default(now())
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  id            String   @id @default(uuid())
+  role_id       String
+  permission_id String
+  created_at    DateTime @default(now())
+
+  @@map("role_permissions")
+}
+
+model UserRole {
+  id              String   @id @default(uuid())
+  user_id         String
+  role_id         String
+  organization_id String
+  created_at      DateTime @default(now())
+
+  @@map("user_roles")
+}
+
+model ChatConversation {
+  id              String   @id @default(uuid())
+  project_id      String
+  organization_id String
+  title           String
+  is_pinned       Boolean  @default(false)
+  created_at      DateTime @default(now())
+  last_message_at DateTime @default(now())
+
+  @@map("chat_conversations")
+}
+
+model ChatMessage {
+  id              String   @id @default(uuid())
+  conversation_id String
+  project_id      String
+  user_id         String
+  role            String
+  content         String
+  attachments     Json?
+  created_at      DateTime @default(now())
+  model           String?
+
+  @@map("chat_messages")
+}
+
+model ChatUpload {
+  id              String   @id @default(uuid())
+  conversation_id String
+  file_name       String
+  file_path       String
+  file_size       Int
+  mime_type       String
+  created_at      DateTime @default(now())
+  user_id         String
+
+  @@map("chat_uploads")
+}
+
+model Document {
+  id         String   @id @default(uuid())
+  project_id String
+  title      String
+  content    String?
+  metadata   Json?
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  @@map("documents")
+}
+
+model KnowledgeSource {
+  id         String   @id @default(uuid())
+  project_id String
+  name       String
+  type       String
+  config     Json?
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  @@map("knowledge_sources")
+}
+
+model Notification {
+  id         String   @id @default(uuid())
+  user_id    String
+  title      String
+  body       String
+  is_read    Boolean  @default(false)
+  created_at DateTime @default(now())
+
+  @@map("notifications")
+}
+
+model AuditLog {
+  id              String   @id @default(uuid())
+  action          String
+  created_at      DateTime @default(now())
+  metadata        Json?
+  organization_id String?
+  user_id         String?
+
+  @@map("audit_logs")
+}
+
+model ActivityLog {
+  id          String   @id @default(uuid())
+  action      String
+  target_type String
+  created_at  DateTime @default(now())
+  metadata    Json?
+  user_id     String?
+
+  @@map("activity_logs")
+}
+
+model ApiKey {
+  id              String   @id @default(uuid())
+  created_at      DateTime @default(now())
+  key_hash        String
+  name            String
+  organization_id String
+  scopes          Json?
+  user_id         String
+
+  @@map("api_keys")
+}
+
+model IntegrationConnection {
+  id                    String   @id @default(uuid())
+  organization_id       String
+  provider              String
+  status                String
+  credentials_vault_key String?
+  created_at            DateTime @default(now())
+  updated_at            DateTime @updatedAt
+
+  @@map("integration_connections")
+}
