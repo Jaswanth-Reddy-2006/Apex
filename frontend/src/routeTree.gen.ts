@@ -17,6 +17,7 @@ import { Route as AcceptInviteRouteImport } from './routes/accept-invite'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedWorkspaceRouteImport } from './routes/_authenticated/workspace'
+import { Route as AuthenticatedVercelRouteImport } from './routes/_authenticated/vercel'
 import { Route as AuthenticatedSupportRouteImport } from './routes/_authenticated/support'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthenticatedRolesRouteImport } from './routes/_authenticated/roles'
@@ -70,6 +71,11 @@ const IndexRoute = IndexRouteImport.update({
 const AuthenticatedWorkspaceRoute = AuthenticatedWorkspaceRouteImport.update({
   id: '/workspace',
   path: '/workspace',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedVercelRoute = AuthenticatedVercelRouteImport.update({
+  id: '/vercel',
+  path: '/vercel',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedSupportRoute = AuthenticatedSupportRouteImport.update({
@@ -174,6 +180,7 @@ export interface FileRoutesByFullPath {
   '/roles': typeof AuthenticatedRolesRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/support': typeof AuthenticatedSupportRoute
+  '/vercel': typeof AuthenticatedVercelRoute
   '/workspace': typeof AuthenticatedWorkspaceRoute
 }
 export interface FileRoutesByTo {
@@ -198,6 +205,7 @@ export interface FileRoutesByTo {
   '/roles': typeof AuthenticatedRolesRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/support': typeof AuthenticatedSupportRoute
+  '/vercel': typeof AuthenticatedVercelRoute
   '/workspace': typeof AuthenticatedWorkspaceRoute
 }
 export interface FileRoutesById {
@@ -224,6 +232,7 @@ export interface FileRoutesById {
   '/_authenticated/roles': typeof AuthenticatedRolesRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/_authenticated/support': typeof AuthenticatedSupportRoute
+  '/_authenticated/vercel': typeof AuthenticatedVercelRoute
   '/_authenticated/workspace': typeof AuthenticatedWorkspaceRoute
 }
 export interface FileRouteTypes {
@@ -250,6 +259,7 @@ export interface FileRouteTypes {
     | '/roles'
     | '/settings'
     | '/support'
+    | '/vercel'
     | '/workspace'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -274,6 +284,7 @@ export interface FileRouteTypes {
     | '/roles'
     | '/settings'
     | '/support'
+    | '/vercel'
     | '/workspace'
   id:
     | '__root__'
@@ -299,6 +310,7 @@ export interface FileRouteTypes {
     | '/_authenticated/roles'
     | '/_authenticated/settings'
     | '/_authenticated/support'
+    | '/_authenticated/vercel'
     | '/_authenticated/workspace'
   fileRoutesById: FileRoutesById
 }
@@ -368,6 +380,13 @@ declare module '@tanstack/react-router' {
       path: '/workspace'
       fullPath: '/workspace'
       preLoaderRoute: typeof AuthenticatedWorkspaceRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/vercel': {
+      id: '/_authenticated/vercel'
+      path: '/vercel'
+      fullPath: '/vercel'
+      preLoaderRoute: typeof AuthenticatedVercelRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/support': {
@@ -494,6 +513,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedRolesRoute: typeof AuthenticatedRolesRoute
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
   AuthenticatedSupportRoute: typeof AuthenticatedSupportRoute
+  AuthenticatedVercelRoute: typeof AuthenticatedVercelRoute
   AuthenticatedWorkspaceRoute: typeof AuthenticatedWorkspaceRoute
 }
 
@@ -514,6 +534,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedRolesRoute: AuthenticatedRolesRoute,
   AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
   AuthenticatedSupportRoute: AuthenticatedSupportRoute,
+  AuthenticatedVercelRoute: AuthenticatedVercelRoute,
   AuthenticatedWorkspaceRoute: AuthenticatedWorkspaceRoute,
 }
 
