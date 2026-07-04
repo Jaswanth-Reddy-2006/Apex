@@ -1,5 +1,6 @@
 {
   "name": "apex-monorepo",
+  "description": "Enterprise knowledge platform turning company data into a queryable knowledge graph",
   "private": true,
   "scripts": {
     "dev:frontend": "npm run dev --prefix frontend",

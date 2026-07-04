@@ -197,6 +197,7 @@ export const createProject = createServerFn({ method: "POST" })
         organization_id: z.string(),
         name: z.string().trim().min(2).max(80),
         description: z.string().trim().max(500).optional(),
+        repository_url: z.string().trim().optional(),
       })
       .parse(input),
   )
@@ -207,6 +208,7 @@ export const createProject = createServerFn({ method: "POST" })
         name: data.name,
         slug: slugify(data.name),
         description: data.description ?? null,
+        repository_url: data.repository_url || null,
         status: "active",
         created_by: context.userId,
       }
@@ -574,3 +576,148 @@ export const updateMyProfile = createServerFn({ method: "POST" })
     });
     return row;
   });
+
+export const connectGithub = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) =>
+    z.object({
+      code: z.string(),
+      organization_id: z.string(),
+    }).parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    const { code, organization_id } = data;
+    const clientId = process.env.GITHUB_CLIENT_ID;
+    const clientSecret = process.env.GITHUB_CLIENT_SECRET;
+
+    if (!clientId || !clientSecret) {
+      throw new Error("GitHub OAuth credentials not configured on the backend server.");
+    }
+
+    // 1. Exchange code for access token
+    const tokenResponse = await fetch("https://github.com/login/oauth/access_token", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({
+        client_id: clientId,
+        client_secret: clientSecret,
+        code,
+      }),
+    });
+
+    if (!tokenResponse.ok) {
+      const errorText = await tokenResponse.text();
+      throw new Error(`Failed to exchange GitHub authorization code: ${errorText}`);
+    }
+
+    const tokenData: any = await tokenResponse.json();
+    if (tokenData.error) {
+      throw new Error(`GitHub OAuth exchange error: ${tokenData.error_description || tokenData.error}`);
+    }
+
+    const accessToken = tokenData.access_token;
+
+    // 2. Fetch authenticated GitHub user details
+    const userResponse = await fetch("https://api.github.com/user", {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: "application/json",
+        "User-Agent": "APEX-App",
+      },
+    });
+
+    if (!userResponse.ok) {
+      throw new Error("Failed to fetch authenticated GitHub user details.");
+    }
+
+    const userData: any = await userResponse.json();
+    const githubUsername = userData.login;
+
+    // 3. Upsert integration connection
+    await prisma.integrationConnection.upsert({
+      where: {
+        organization_id_provider: {
+          organization_id,
+          provider: "github",
+        },
+      },
+      update: {
+        status: "connected",
+        display_name: githubUsername,
+        credentials_vault_key: accessToken,
+        last_sync_at: new Date(),
+        connected_by: context.userId,
+      },
+      create: {
+        organization_id,
+        provider: "github",
+        status: "connected",
+        display_name: githubUsername,
+        credentials_vault_key: accessToken,
+        connected_by: context.userId,
+      },
+    });
+
+    return { success: true, username: githubUsername };
+  });
+
+export const listGithubRepositories = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) =>
+    z.object({
+      organization_id: z.string(),
+    }).parse(input),
+  )
+  .handler(async ({ data }) => {
+    const { organization_id } = data;
+    
+    const connection = await prisma.integrationConnection.findUnique({
+      where: {
+        organization_id_provider: {
+          organization_id,
+          provider: "github",
+        },
+      },
+    });
+
+    if (!connection || connection.status !== "connected" || !connection.credentials_vault_key) {
+      return { repositories: [] };
+    }
+
+    const accessToken = connection.credentials_vault_key;
+
+    try {
+      const response = await fetch("https://api.github.com/user/repos?per_page=100&sort=updated", {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          Accept: "application/json",
+          "User-Agent": "APEX-App",
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to fetch repository list from GitHub API.");
+      }
+
+      const repos: any = await response.json();
+      if (!Array.isArray(repos)) {
+        return { repositories: [] };
+      }
+
+      return {
+        repositories: repos.map((r: any) => ({
+          name: r.name,
+          full_name: r.full_name,
+          html_url: r.html_url,
+        })),
+      };
+    } catch (err) {
+      console.error("[GitHub API] Error listing repositories:", err);
+      return { repositories: [] };
+    }
+  });
+
+

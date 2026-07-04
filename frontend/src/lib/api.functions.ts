@@ -29,3 +29,6 @@ export const listIntegrations = createClientFn("listIntegrations", "GET") as typ
 export const listNotifications = createClientFn("listNotifications", "GET") as typeof backendApi.listNotifications;
 export const getMyProfile = createClientFn("getMyProfile", "GET") as typeof backendApi.getMyProfile;
 export const updateMyProfile = createClientFn("updateMyProfile", "POST") as typeof backendApi.updateMyProfile;
+export const connectGithub = createClientFn("connectGithub", "POST") as typeof backendApi.connectGithub;
+export const listGithubRepositories = createClientFn("listGithubRepositories", "GET") as typeof backendApi.listGithubRepositories;
+

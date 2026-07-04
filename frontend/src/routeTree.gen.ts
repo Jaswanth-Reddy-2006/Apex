@@ -25,6 +25,7 @@ import { Route as AuthenticatedProfileRouteImport } from './routes/_authenticate
 import { Route as AuthenticatedOrganizationRouteImport } from './routes/_authenticated/organization'
 import { Route as AuthenticatedNotificationsRouteImport } from './routes/_authenticated/notifications'
 import { Route as AuthenticatedMembersRouteImport } from './routes/_authenticated/members'
+import { Route as AuthenticatedIntegrationsCallbackRouteImport } from './routes/_authenticated/integrations-callback'
 import { Route as AuthenticatedIntegrationsRouteImport } from './routes/_authenticated/integrations'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthenticatedChatRouteImport } from './routes/_authenticated/chat'
@@ -113,6 +114,12 @@ const AuthenticatedMembersRoute = AuthenticatedMembersRouteImport.update({
   path: '/members',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedIntegrationsCallbackRoute =
+  AuthenticatedIntegrationsCallbackRouteImport.update({
+    id: '/integrations-callback',
+    path: '/integrations-callback',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedIntegrationsRoute =
   AuthenticatedIntegrationsRouteImport.update({
     id: '/integrations',
@@ -158,6 +165,7 @@ export interface FileRoutesByFullPath {
   '/chat': typeof AuthenticatedChatRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/integrations': typeof AuthenticatedIntegrationsRoute
+  '/integrations-callback': typeof AuthenticatedIntegrationsCallbackRoute
   '/members': typeof AuthenticatedMembersRoute
   '/notifications': typeof AuthenticatedNotificationsRoute
   '/organization': typeof AuthenticatedOrganizationRoute
@@ -181,6 +189,7 @@ export interface FileRoutesByTo {
   '/chat': typeof AuthenticatedChatRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/integrations': typeof AuthenticatedIntegrationsRoute
+  '/integrations-callback': typeof AuthenticatedIntegrationsCallbackRoute
   '/members': typeof AuthenticatedMembersRoute
   '/notifications': typeof AuthenticatedNotificationsRoute
   '/organization': typeof AuthenticatedOrganizationRoute
@@ -206,6 +215,7 @@ export interface FileRoutesById {
   '/_authenticated/chat': typeof AuthenticatedChatRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/_authenticated/integrations': typeof AuthenticatedIntegrationsRoute
+  '/_authenticated/integrations-callback': typeof AuthenticatedIntegrationsCallbackRoute
   '/_authenticated/members': typeof AuthenticatedMembersRoute
   '/_authenticated/notifications': typeof AuthenticatedNotificationsRoute
   '/_authenticated/organization': typeof AuthenticatedOrganizationRoute
@@ -231,6 +241,7 @@ export interface FileRouteTypes {
     | '/chat'
     | '/dashboard'
     | '/integrations'
+    | '/integrations-callback'
     | '/members'
     | '/notifications'
     | '/organization'
@@ -254,6 +265,7 @@ export interface FileRouteTypes {
     | '/chat'
     | '/dashboard'
     | '/integrations'
+    | '/integrations-callback'
     | '/members'
     | '/notifications'
     | '/organization'
@@ -278,6 +290,7 @@ export interface FileRouteTypes {
     | '/_authenticated/chat'
     | '/_authenticated/dashboard'
     | '/_authenticated/integrations'
+    | '/_authenticated/integrations-callback'
     | '/_authenticated/members'
     | '/_authenticated/notifications'
     | '/_authenticated/organization'
@@ -413,6 +426,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedMembersRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/integrations-callback': {
+      id: '/_authenticated/integrations-callback'
+      path: '/integrations-callback'
+      fullPath: '/integrations-callback'
+      preLoaderRoute: typeof AuthenticatedIntegrationsCallbackRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/integrations': {
       id: '/_authenticated/integrations'
       path: '/integrations'
@@ -465,6 +485,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedChatRoute: typeof AuthenticatedChatRoute
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
   AuthenticatedIntegrationsRoute: typeof AuthenticatedIntegrationsRoute
+  AuthenticatedIntegrationsCallbackRoute: typeof AuthenticatedIntegrationsCallbackRoute
   AuthenticatedMembersRoute: typeof AuthenticatedMembersRoute
   AuthenticatedNotificationsRoute: typeof AuthenticatedNotificationsRoute
   AuthenticatedOrganizationRoute: typeof AuthenticatedOrganizationRoute
@@ -483,6 +504,8 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedChatRoute: AuthenticatedChatRoute,
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
   AuthenticatedIntegrationsRoute: AuthenticatedIntegrationsRoute,
+  AuthenticatedIntegrationsCallbackRoute:
+    AuthenticatedIntegrationsCallbackRoute,
   AuthenticatedMembersRoute: AuthenticatedMembersRoute,
   AuthenticatedNotificationsRoute: AuthenticatedNotificationsRoute,
   AuthenticatedOrganizationRoute: AuthenticatedOrganizationRoute,

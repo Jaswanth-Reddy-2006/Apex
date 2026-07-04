@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { CheckCircle2, Circle } from "lucide-react";
-import { listIntegrations } from "@/lib/api.functions";
+import { listIntegrations, listMyOrganizations } from "@/lib/api.functions";
 import { INTEGRATIONS, type IntegrationDefinition } from "@/lib/integrations-catalog";
 import { useOrg } from "@/lib/org-context";
 import { PageHeader } from "@/components/app/page-header";
@@ -39,11 +39,40 @@ function IntegrationsPage() {
     return acc;
   }, {});
 
+  const handleConnectClick = (item: IntegrationDefinition, isConnected: boolean) => {
+    if (item.id === "github") {
+      if (isConnected) {
+        const conn = connected.get("github");
+        toast.success(`You are already connected to GitHub as: ${conn?.display_name || "Authorized User"}`);
+        return;
+      }
+
+      const clientId = import.meta.env.VITE_GITHUB_CLIENT_ID || "";
+      if (!clientId) {
+        toast.error("Please add VITE_GITHUB_CLIENT_ID to your frontend/.env file to configure this OAuth flow.");
+        return;
+      }
+
+      if (!activeOrg?.organization_id) {
+        toast.error("No active organization found. Please register or join an organization first.");
+        return;
+      }
+
+      const redirectUri = encodeURIComponent(`${window.location.origin}/integrations-callback`);
+      const githubOAuthUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&scope=repo,user&state=${activeOrg.organization_id}`;
+      
+      toast.loading("Redirecting to GitHub for authorization...");
+      window.location.href = githubOAuthUrl;
+    } else {
+      toast.info(`${item.name} OAuth will be enabled soon. Provider slot registered.`);
+    }
+  };
+
   return (
     <div className="space-y-8">
       <PageHeader
         title="Integrations"
-        description="Connect APEX to the services your team already uses. OAuth wiring will be added in Phase 2."
+        description="Connect APEX to the services your team already uses. OAuth wiring is fully enabled for GitHub."
       />
 
       {Object.entries(grouped).map(([cat, items]) => (
@@ -64,7 +93,11 @@ function IntegrationsPage() {
                       </div>
                       <div>
                         <CardTitle className="text-base">{i.name}</CardTitle>
-                        <p className="text-xs text-muted-foreground">{i.description}</p>
+                        {isConnected ? (
+                          <p className="text-xs text-success font-mono font-medium">@{conn?.display_name}</p>
+                        ) : (
+                          <p className="text-xs text-muted-foreground">{i.description}</p>
+                        )}
                       </div>
                     </div>
                     {isConnected ? (
@@ -82,13 +115,9 @@ function IntegrationsPage() {
                       variant={isConnected ? "outline" : "default"}
                       size="sm"
                       className={isConnected ? "" : "gradient-primary text-primary-foreground"}
-                      onClick={() =>
-                        toast.info(
-                          `${i.name} OAuth will be enabled in Phase 2. Provider slot registered.`,
-                        )
-                      }
+                      onClick={() => handleConnectClick(i, isConnected)}
                     >
-                      {isConnected ? "Manage" : "Connect"}
+                      {isConnected ? "Connected" : "Connect"}
                     </Button>
                   </CardContent>
                 </Card>
