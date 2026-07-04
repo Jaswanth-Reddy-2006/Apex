@@ -2,7 +2,8 @@ import { createFileRoute } from "@tanstack/react-router";
 import { convertToModelMessages, streamText, type UIMessage } from "ai";
 import { PrismaClient } from "@prisma/client";
 import jwt from "jsonwebtoken";
-import { createLovableAiGatewayProvider } from "@/lib/ai-gateway.server";
+import { huggingface } from "@ai-sdk/huggingface";
+import { generateEmbedding } from "../../services/rag.js";
 
 const prisma = new PrismaClient();
 const JWT_SECRET = process.env.JWT_SECRET || "default_jwt_secret_please_change_in_production";
@@ -27,8 +28,9 @@ export const Route = createFileRoute("/api/chat")({
           return new Response("Bad request", { status: 400 });
         }
 
-        const apiKey = process.env.LOVABLE_API_KEY;
-        if (!apiKey) return new Response("Missing LOVABLE_API_KEY", { status: 500 });
+        if (!process.env.HUGGINGFACE_API_KEY) {
+          return new Response("Missing HUGGINGFACE_API_KEY", { status: 500 });
+        }
 
         // Verify JWT and extract userId
         let userId: string;
@@ -45,7 +47,6 @@ export const Route = createFileRoute("/api/chat")({
           where: { id: conversationId },
           select: { id: true, project_id: true, organization_id: true, title: true },
         });
-
         if (!conv || conv.project_id !== projectId) {
           return new Response("Forbidden", { status: 403 });
         }
@@ -65,7 +66,7 @@ export const Route = createFileRoute("/api/chat")({
               user_id: userId,
               role: "user",
               content: text,
-              attachments: (last as any).attachments ?? [],
+              attachments: ((last as any).attachments || []) as any,
             },
           });
 
@@ -83,13 +84,54 @@ export const Route = createFileRoute("/api/chat")({
           }
         }
 
-        const gateway = createLovableAiGatewayProvider(apiKey);
-        const model = gateway("google/gemini-3-flash-preview");
+        let contextData = "";
+        
+        // Retrieve RAG Context
+        if (last?.role === "user") {
+          try {
+            const userText = last.parts
+              .map((p) => (p.type === "text" ? p.text : ""))
+              .join("").trim();
+            
+            const embedding = await generateEmbedding(userText);
+            
+            // Raw MongoDB Vector Search
+            const rawResult: any = await prisma.$runCommandRaw({
+              aggregate: "integration_data_nodes",
+              pipeline: [
+                {
+                  $vectorSearch: {
+                    index: "vector_index", // Requires an Atlas Vector Search index named 'vector_index'
+                    path: "embedding",
+                    queryVector: embedding,
+                    numCandidates: 100,
+                    limit: 5,
+                    filter: { organization_id: conv.organization_id }
+                  }
+                },
+                {
+                  $project: { content: 1, score: { $meta: "searchScore" } }
+                }
+              ],
+              cursor: {}
+            });
+
+            const docs = rawResult?.cursor?.firstBatch ?? [];
+            if (docs.length > 0) {
+              contextData = docs.map((d: any) => d.content).join("\n\n");
+            }
+          } catch (e) {
+            console.error("[RAG] Vector search failed:", e);
+          }
+        }
+
+        const model = huggingface("Qwen/Qwen2.5-72B-Instruct");
 
         const systemPrompt =
           `You are APEX, an AI assistant embedded inside a specific project (id: ${projectId}). ` +
           `You have per-project memory and MUST never reveal data from other projects. Be concise, technical, and helpful. ` +
-          `Format responses in markdown.`;
+          `Format responses in markdown.\n\n` +
+          (contextData ? `Relevant context from connected integrations (GitHub, Vercel):\n${contextData}\n\n` : ` `);
 
         const result = streamText({
           model,
@@ -103,7 +145,7 @@ export const Route = createFileRoute("/api/chat")({
                 user_id: userId,
                 role: "assistant",
                 content: text,
-                model: "google/gemini-3-flash-preview",
+                model: "Qwen/Qwen2.5-72B-Instruct",
               },
             });
             await prisma.chatConversation.update({

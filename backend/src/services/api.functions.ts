@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireAuth } from "../lib/auth-middleware.js";
+import { generateEmbedding } from "./rag.js";
 
 const slugify = (s: string) =>
   s
@@ -831,18 +832,281 @@ export const listGithubRepositories = createServerFn({ method: "GET" })
         return { repositories: [] };
       }
 
+      const formattedRepos = repos.map((r: any) => ({
+        name: r.name,
+        full_name: r.full_name,
+        html_url: r.html_url,
+      }));
+
+      // Background sync RAG data
+      Promise.resolve().then(async () => {
+        try {
+          // Clear old data
+          await context.prisma.integrationDataNode.deleteMany({
+            where: { organization_id, provider: "github" }
+          });
+          
+          for (const repo of formattedRepos) {
+            const content = `GitHub Repository: ${repo.full_name}. URL: ${repo.html_url}`;
+            const embedding = await generateEmbedding(content);
+            await context.prisma.integrationDataNode.create({
+              data: {
+                organization_id,
+                project_id: "global", // Can be refined later
+                provider: "github",
+                content,
+                embedding,
+              }
+            });
+          }
+        } catch (e) {
+          console.error("RAG Sync Error (GitHub):", e);
+        }
+      });
+
       return {
-        repositories: repos.map((r: any) => ({
-          name: r.name,
-          full_name: r.full_name,
-          html_url: r.html_url,
-        })),
+        repositories: formattedRepos,
       };
     } catch (err) {
       console.error("[GitHub API] Error listing repositories:", err);
       return { repositories: [] };
     }
   });
+
+// ================================================================
+// Vercel Integration
+// ================================================================
+
+export const connectVercelToken = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((input) =>
+    z.object({
+      token: z.string().trim().min(5),
+      username: z.string().trim().min(1),
+      organization_id: z.string(),
+    }).parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    const { token, username, organization_id } = data;
+    await verifyPermission(context, organization_id, "Integrations.Create");
+
+    // 1. Verify the token by fetching Vercel user info
+    const userResponse = await fetch("https://api.vercel.com/v2/user", {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+    });
+
+    if (!userResponse.ok) {
+      throw new Error("Invalid Vercel token. Please check the token and try again.");
+    }
+
+    const userData: any = await userResponse.json();
+    const vercelUsername = userData.user?.username || userData.user?.email || "vercel-user";
+
+    // 2. Upsert integration connection in MongoDB
+    await context.prisma.integrationConnection.upsert({
+      where: {
+        organization_id_provider: {
+          organization_id,
+          provider: "vercel",
+        },
+      },
+      update: {
+        status: "connected",
+        display_name: vercelUsername,
+        credentials_vault_key: token,
+        last_sync_at: new Date(),
+        connected_by: context.userId,
+      },
+      create: {
+        organization_id,
+        provider: "vercel",
+        status: "connected",
+        display_name: vercelUsername,
+        credentials_vault_key: token,
+        connected_by: context.userId,
+      },
+    });
+
+    return { success: true, username: vercelUsername };
+  });
+
+// OAuth flow — used when VERCEL_CLIENT_ID + VERCEL_CLIENT_SECRET are configured
+// Any user clicks "Connect" → redirected to Vercel → comes back with code → this exchanges it
+export const connectVercelOAuth = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((input) =>
+    z.object({
+      code: z.string().min(1),
+      organization_id: z.string(),
+    }).parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    const { code, organization_id } = data;
+    const clientId = process.env.VERCEL_CLIENT_ID;
+    const clientSecret = process.env.VERCEL_CLIENT_SECRET;
+    const redirectUri = process.env.VERCEL_REDIRECT_URI;
+
+    if (!clientId || !clientSecret || !redirectUri) {
+      throw new Error(
+        "Vercel OAuth credentials (VERCEL_CLIENT_ID, VERCEL_CLIENT_SECRET, VERCEL_REDIRECT_URI) are not configured on the server.",
+      );
+    }
+
+    // 1. Exchange the authorization code for an access token
+    const tokenResponse = await fetch("https://api.vercel.com/v2/oauth/access_token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        client_id: clientId,
+        client_secret: clientSecret,
+        code,
+        redirect_uri: redirectUri,
+      }).toString(),
+    });
+
+    if (!tokenResponse.ok) {
+      const errorText = await tokenResponse.text();
+      throw new Error(`Vercel token exchange failed: ${errorText}`);
+    }
+
+    const tokenData: any = await tokenResponse.json();
+    if (tokenData.error) {
+      throw new Error(`Vercel OAuth error: ${tokenData.error_description || tokenData.error}`);
+    }
+
+    const accessToken = tokenData.access_token;
+
+    // 2. Fetch the authenticated Vercel user
+    const userResponse = await fetch("https://api.vercel.com/v2/user", {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+    });
+
+    if (!userResponse.ok) {
+      throw new Error("Failed to fetch Vercel user details after token exchange.");
+    }
+
+    const userData: any = await userResponse.json();
+    const vercelUsername = userData.user?.username || userData.user?.email || "vercel-user";
+
+    // 3. Upsert integration connection in MongoDB
+    await context.prisma.integrationConnection.upsert({
+      where: {
+        organization_id_provider: { organization_id, provider: "vercel" },
+      },
+      update: {
+        status: "connected",
+        display_name: vercelUsername,
+        credentials_vault_key: accessToken,
+        last_sync_at: new Date(),
+        connected_by: context.userId,
+      },
+      create: {
+        organization_id,
+        provider: "vercel",
+        status: "connected",
+        display_name: vercelUsername,
+        credentials_vault_key: accessToken,
+        connected_by: context.userId,
+      },
+    });
+
+    return { success: true, username: vercelUsername };
+  });
+
+export const listVercelProjects = createServerFn({ method: "GET" })
+  .middleware([requireAuth])
+  .inputValidator((input) =>
+    z.object({
+      organization_id: z.string(),
+    }).parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    const { organization_id } = data;
+    const connection = await context.prisma.integrationConnection.findUnique({
+      where: {
+        organization_id_provider: {
+          organization_id,
+          provider: "vercel",
+        },
+      },
+    });
+
+    if (!connection || connection.status !== "connected" || !connection.credentials_vault_key) {
+      return { projects: [] };
+    }
+
+    const token = connection.credentials_vault_key;
+
+    try {
+      const response = await fetch("https://api.vercel.com/v9/projects", {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to fetch projects list from Vercel API.");
+      }
+
+      const resData: any = await response.json();
+      const projects = resData.projects;
+      if (!Array.isArray(projects)) {
+        return { projects: [] };
+      }
+
+      const formattedProjects = projects.map((p: any) => ({
+        id: p.id,
+        name: p.name,
+        url: `https://${p.name}.vercel.app`,
+        framework: p.framework ?? "unknown",
+        latestDeployment: p.latestDeployments?.[0]?.readyState ?? "unknown",
+        updatedAt: p.updatedAt,
+      }));
+
+      // Background sync RAG data
+      Promise.resolve().then(async () => {
+        try {
+          await context.prisma.integrationDataNode.deleteMany({
+            where: { organization_id, provider: "vercel" }
+          });
+          
+          for (const proj of formattedProjects) {
+            const content = `Vercel Project: ${proj.name}. Framework: ${proj.framework}. URL: ${proj.url}. Latest Deployment Status: ${proj.latestDeployment}.`;
+            const embedding = await generateEmbedding(content);
+            await context.prisma.integrationDataNode.create({
+              data: {
+                organization_id,
+                project_id: "global",
+                provider: "vercel",
+                content,
+                embedding,
+              }
+            });
+          }
+        } catch (e) {
+          console.error("RAG Sync Error (Vercel):", e);
+        }
+      });
+
+      return {
+        projects: formattedProjects,
+      };
+    } catch (err) {
+      console.error("[Vercel API] Error listing projects:", err);
+      return { projects: [] };
+    }
+  });
+
+// ================================================================
+// GitLab Integration
+// ================================================================
 
 export const connectGitlab = createServerFn({ method: "POST" })
   .middleware([requireAuth])
@@ -893,7 +1157,6 @@ export const listGitlabRepositories = createServerFn({ method: "GET" })
   )
   .handler(async ({ data, context }) => {
     const { organization_id } = data;
-    
     const connection = await context.prisma.integrationConnection.findUnique({
       where: {
         organization_id_provider: {

@@ -7,9 +7,9 @@ export const listConversations = createServerFn({ method: "GET" })
   .inputValidator((input) => z.object({ project_id: z.string() }).parse(input))
   .handler(async ({ data, context }) => {
     const rows = await context.prisma.chatConversation.findMany({
-      where: { project_id: data.project_id },
+      where: { project_id: data.project_id, user_id: context.userId },
       orderBy: [
-        { is_pinned: "desc" },
+        { pinned: "desc" },
         { last_message_at: "desc" }
       ]
     });
@@ -30,6 +30,7 @@ export const createConversation = createServerFn({ method: "POST" })
       data: {
         project_id: data.project_id,
         organization_id: data.organization_id,
+        user_id: context.userId,
         title: data.title || "New chat",
       }
     });
@@ -66,7 +67,7 @@ export const togglePinConversation = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     await context.prisma.chatConversation.update({
       where: { id: data.id },
-      data: { is_pinned: data.pinned }
+      data: { pinned: data.pinned }
     });
     return { ok: true };
   });

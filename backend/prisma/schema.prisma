@@ -273,7 +273,7 @@ model ApiKey {
 }
 
 model IntegrationConnection {
-  id                    String    @id @default(uuid()) @map("_id")
+  id                    String   @id @default(uuid()) @map("_id")
   organization_id       String
   provider              String
   display_name          String?
@@ -287,4 +287,16 @@ model IntegrationConnection {
 
   @@unique([organization_id, provider])
   @@map("integration_connections")
+}
+
+model IntegrationDataNode {
+  id              String   @id @default(uuid()) @map("_id")
+  organization_id String
+  project_id      String
+  provider        String   // e.g., "github", "vercel"
+  content         String   // The text summary (e.g., PR title, deployment status)
+  embedding       Float[]  // 384-dimensional vector from MiniLM
+  created_at      DateTime @default(now())
+  
+  @@map("integration_data_nodes")
 }
