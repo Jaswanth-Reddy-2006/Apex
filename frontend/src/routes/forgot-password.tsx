@@ -5,7 +5,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -29,14 +29,11 @@ function ForgotPassword() {
 
   const onSubmit = form.handleSubmit(async ({ email }) => {
     setLoading(true);
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/reset-password`,
-    });
+    // TODO: implement custom reset password endpoint
+    await new Promise((res) => setTimeout(res, 1000));
     setLoading(false);
-    if (error) {
-      toast.error(error.message);
-      return;
-    }
+    toast.error("Password reset is not implemented yet in the new auth system");
+    return;
     setSent(true);
   });
 

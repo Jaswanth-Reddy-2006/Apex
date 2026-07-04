@@ -22,20 +22,21 @@ const slugify = (s: string) =>
 // ================================================================
 
 export const listMyOrganizations = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .handler(async ({ context }) => {
-    const { data, error } = await context.supabase
-      .from("organizations")
-      .select(
-        "id, name, slug, description, logo_url, domain, industry, employee_count, country, timezone, phone, created_at, updated_at, owner_id",
-      )
-      .order("created_at", { ascending: false });
-    if (error) throw new Error(error.message);
+    const memberships = await context.prisma.organizationMember.findMany({
+      where: { user_id: context.userId }
+    });
+    const orgIds = memberships.map(m => m.organization_id);
+    const data = await context.prisma.organization.findMany({
+      where: { id: { in: orgIds } },
+      orderBy: { created_at: "desc" },
+    });
     return data ?? [];
   });
 
 export const createOrganization = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((input) =>
     z
       .object({
@@ -46,26 +47,19 @@ export const createOrganization = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const slug = `${slugify(data.name)}-${Math.random().toString(36).slice(2, 6)}`;
-    const { data: row, error } = await context.supabase
-      .from("organizations")
-      .insert({
+    const org = await context.prisma.organization.create({
+      data: {
         name: data.name,
         slug,
         description: data.description ?? null,
         owner_id: context.userId,
-      })
-      .select()
-      .single();
-    if (error) throw new Error(error.message);
-    return row;
+      }
+    });
+    return org;
   });
 
-/**
- * Atomically create the organization, its default workspace, its first project,
- * and mark the caller as owner + project manager.
- */
 export const bootstrapOrganization = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((input) =>
     z
       .object({
@@ -83,21 +77,68 @@ export const bootstrapOrganization = createServerFn({ method: "POST" })
       .parse(input),
   )
   .handler(async ({ data, context }) => {
-    const { data: row, error } = await context.supabase.rpc("bootstrap_organization", {
-      _name: data.name,
-      _description: data.description ?? "",
-      _domain: data.domain ?? "",
-      _industry: data.industry ?? "",
-      _employee_count: data.employee_count ?? "",
-      _country: data.country ?? "",
-      _timezone: data.timezone ?? "",
-      _phone: data.phone ?? "",
-      _logo_url: data.logo_url ?? "",
-      _default_project_name: data.default_project_name ?? "First Project",
+    // Custom Prisma transaction to replace the SQL RPC bootstrap_organization
+    const slug = `${slugify(data.name)}-${Math.random().toString(36).slice(2, 6)}`;
+    
+    const result = await context.prisma.$transaction(async (tx: any) => {
+      const org = await tx.organization.create({
+        data: {
+          name: data.name,
+          slug,
+          description: data.description ?? null,
+          domain: data.domain ?? null,
+          industry: data.industry ?? null,
+          employee_count: data.employee_count ?? null,
+          country: data.country ?? null,
+          timezone: data.timezone ?? null,
+          phone: data.phone ?? null,
+          logo_url: data.logo_url ?? null,
+          owner_id: context.userId,
+        }
+      });
+      
+      const workspace = await tx.workspace.create({
+        data: {
+          organization_id: org.id,
+          name: "Default Workspace",
+          slug: "default",
+          description: "Default workspace",
+        }
+      });
+      
+      const project = await tx.project.create({
+        data: {
+          organization_id: org.id,
+          workspace_id: workspace.id,
+          name: data.default_project_name ?? "First Project",
+          slug: "first-project",
+          description: "Your first project",
+          status: "active",
+          created_by: context.userId,
+        }
+      });
+      
+      await tx.organizationMember.create({
+        data: {
+          organization_id: org.id,
+          user_id: context.userId,
+          role: "owner",
+          status: "active",
+        }
+      });
+
+      await tx.projectMember.create({
+        data: {
+          project_id: project.id,
+          user_id: context.userId,
+          role: "manager",
+        }
+      });
+      
+      return { organization_id: org.id, workspace_id: workspace.id, project_id: project.id };
     });
-    if (error) throw new Error(error.message);
-    const rec = Array.isArray(row) ? row[0] : row;
-    return rec as { organization_id: string; workspace_id: string; project_id: string };
+    
+    return result;
   });
 
 export const joinDemoOrganization = createServerFn({ method: "POST" })
@@ -169,34 +210,35 @@ export const joinDemoOrganization = createServerFn({ method: "POST" })
 // ================================================================
 
 export const getDashboardStats = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .handler(async ({ context }) => {
-    const [orgs, projects, members, integrations] = await Promise.all([
-      context.supabase.from("organizations").select("id", { count: "exact", head: true }),
-      context.supabase.from("projects").select("id", { count: "exact", head: true }),
-      context.supabase.from("organization_members").select("id", { count: "exact", head: true }),
-      context.supabase
-        .from("integration_connections")
-        .select("id", { count: "exact", head: true })
-        .eq("status", "connected"),
-    ]);
+    const memberships = await context.prisma.organizationMember.findMany({
+      where: { user_id: context.userId }
+    });
+    const orgIds = memberships.map(m => m.organization_id);
+    
+    const orgs = orgIds.length;
+    const projects = await context.prisma.project.count({ where: { organization_id: { in: orgIds } } });
+    const members = await context.prisma.organizationMember.count({ where: { organization_id: { in: orgIds } } });
+    const integrations = await context.prisma.integrationConnection.count({
+      where: { organization_id: { in: orgIds }, status: "connected" }
+    });
     return {
-      organizations: orgs.count ?? 0,
-      projects: projects.count ?? 0,
-      members: members.count ?? 0,
-      integrations: integrations.count ?? 0,
+      organizations: orgs,
+      projects: projects,
+      members: members,
+      integrations: integrations,
     };
   });
 
 export const listRecentActivity = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .handler(async ({ context }) => {
-    const { data, error } = await context.supabase
-      .from("activity_logs")
-      .select("id, action, target_type, created_at, metadata")
-      .order("created_at", { ascending: false })
-      .limit(20);
-    if (error) throw new Error(error.message);
+    const data = await context.prisma.activityLog.findMany({
+      where: { user_id: context.userId },
+      orderBy: { created_at: "desc" },
+      take: 20
+    });
     return data ?? [];
   });
 
@@ -205,22 +247,25 @@ export const listRecentActivity = createServerFn({ method: "GET" })
 // ================================================================
 
 export const listProjects = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .handler(async ({ context }) => {
-    const { data, error } = await context.supabase
-      .from("projects")
-      .select("id, name, slug, description, status, created_at, organization_id, workspace_id")
-      .order("created_at", { ascending: false });
-    if (error) throw new Error(error.message);
+    const memberships = await context.prisma.organizationMember.findMany({
+      where: { user_id: context.userId }
+    });
+    const orgIds = memberships.map(m => m.organization_id);
+    const data = await context.prisma.project.findMany({
+      where: { organization_id: { in: orgIds } },
+      orderBy: { created_at: "desc" },
+    });
     return data ?? [];
   });
 
 export const createProject = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((input) =>
     z
       .object({
-        organization_id: z.string().uuid(),
+        organization_id: z.string(),
         name: z.string().trim().min(2).max(80),
         description: z.string().trim().max(500).optional(),
         repository_url: z.string().trim().optional(),
@@ -228,20 +273,17 @@ export const createProject = createServerFn({ method: "POST" })
       .parse(input),
   )
   .handler(async ({ data, context }) => {
-    const { data: row, error } = await context.supabase
-      .from("projects")
-      .insert({
+    const row = await context.prisma.project.create({
+      data: {
         organization_id: data.organization_id,
         name: data.name,
         slug: slugify(data.name),
         description: data.description ?? null,
         repository_url: data.repository_url || null,
-        created_by: context.userId,
         status: "active",
-      })
-      .select()
-      .single();
-    if (error) throw new Error(error.message);
+        created_by: context.userId,
+      }
+    });
     return row;
   });
 
@@ -250,13 +292,16 @@ export const createProject = createServerFn({ method: "POST" })
 // ================================================================
 
 export const listWorkspaces = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .handler(async ({ context }) => {
-    const { data, error } = await context.supabase
-      .from("workspaces")
-      .select("id, name, slug, description, organization_id, created_at")
-      .order("created_at", { ascending: false });
-    if (error) throw new Error(error.message);
+    const memberships = await context.prisma.organizationMember.findMany({
+      where: { user_id: context.userId }
+    });
+    const orgIds = memberships.map(m => m.organization_id);
+    const data = await context.prisma.workspace.findMany({
+      where: { organization_id: { in: orgIds } },
+      orderBy: { created_at: "desc" }
+    });
     return data ?? [];
   });
 
@@ -265,24 +310,25 @@ export const listWorkspaces = createServerFn({ method: "GET" })
 // ================================================================
 
 export const listMembers = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .handler(async ({ context }) => {
-    const { data, error } = await context.supabase
-      .from("organization_members")
-      .select(
-        "id, role, custom_role_id, department, designation, phone, status, user_id, organization_id, created_at, profiles:user_id(email, full_name, avatar_url)",
-      )
-      .order("created_at", { ascending: false });
-    if (error) throw new Error(error.message);
+    const memberships = await context.prisma.organizationMember.findMany({
+      where: { user_id: context.userId }
+    });
+    const orgIds = memberships.map(m => m.organization_id);
+    const data = await context.prisma.organizationMember.findMany({
+      where: { organization_id: { in: orgIds } },
+      orderBy: { created_at: "desc" }
+    });
     return data ?? [];
   });
 
 export const updateMemberRole = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((input) =>
     z
       .object({
-        member_id: z.string().uuid(),
+        member_id: z.string(),
         role: z.enum([
           "owner",
           "admin",
@@ -294,28 +340,25 @@ export const updateMemberRole = createServerFn({ method: "POST" })
           "finance",
           "viewer",
         ]),
-        custom_role_id: z.string().uuid().nullable().optional(),
+        custom_role_id: z.string().nullable().optional(),
       })
       .parse(input),
   )
   .handler(async ({ data, context }) => {
-    const { error } = await context.supabase
-      .from("organization_members")
-      .update({ role: data.role, custom_role_id: data.custom_role_id ?? null })
-      .eq("id", data.member_id);
-    if (error) throw new Error(error.message);
+    await context.prisma.organizationMember.update({
+      where: { id: data.member_id },
+      data: { role: data.role, custom_role_id: data.custom_role_id ?? null }
+    });
     return { ok: true };
   });
 
 export const removeMember = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((input) => z.object({ member_id: z.string().uuid() }).parse(input))
+  .middleware([requireAuth])
+  .inputValidator((input) => z.object({ member_id: z.string() }).parse(input))
   .handler(async ({ data, context }) => {
-    const { error } = await context.supabase
-      .from("organization_members")
-      .delete()
-      .eq("id", data.member_id);
-    if (error) throw new Error(error.message);
+    await context.prisma.organizationMember.delete({
+      where: { id: data.member_id }
+    });
     return { ok: true };
   });
 
@@ -324,24 +367,22 @@ export const removeMember = createServerFn({ method: "POST" })
 // ================================================================
 
 export const listInvitations = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((input) => z.object({ organization_id: z.string().uuid() }).parse(input))
+  .middleware([requireAuth])
+  .inputValidator((input) => z.object({ organization_id: z.string() }).parse(input))
   .handler(async ({ data, context }) => {
-    const { data: rows, error } = await context.supabase
-      .from("invitations")
-      .select("id, email, role, status, token, expires_at, created_at, organization_id")
-      .eq("organization_id", data.organization_id)
-      .order("created_at", { ascending: false });
-    if (error) throw new Error(error.message);
+    const rows = await context.prisma.invitation.findMany({
+      where: { organization_id: data.organization_id },
+      orderBy: { created_at: "desc" }
+    });
     return rows ?? [];
   });
 
 export const createInvitation = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((input) =>
     z
       .object({
-        organization_id: z.string().uuid(),
+        organization_id: z.string(),
         email: z.string().trim().email().max(255),
         role: z.enum([
           "admin",
@@ -357,70 +398,69 @@ export const createInvitation = createServerFn({ method: "POST" })
       .parse(input),
   )
   .handler(async ({ data, context }) => {
-    const { data: row, error } = await context.supabase
-      .from("invitations")
-      .insert({
+    const row = await context.prisma.invitation.create({
+      data: {
         organization_id: data.organization_id,
         email: data.email.toLowerCase(),
         role: data.role,
-        invited_by: context.userId,
-      })
-      .select()
-      .single();
-    if (error) throw new Error(error.message);
+        status: "pending",
+        token: Math.random().toString(36).slice(2),
+        expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+      }
+    });
     return row;
   });
 
 export const revokeInvitation = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((input) => z.object({ invitation_id: z.string().uuid() }).parse(input))
+  .middleware([requireAuth])
+  .inputValidator((input) => z.object({ invitation_id: z.string() }).parse(input))
   .handler(async ({ data, context }) => {
-    const { error } = await context.supabase
-      .from("invitations")
-      .update({ status: "revoked" })
-      .eq("id", data.invitation_id);
-    if (error) throw new Error(error.message);
+    await context.prisma.invitation.update({
+      where: { id: data.invitation_id },
+      data: { status: "revoked" }
+    });
     return { ok: true };
   });
 
 export const acceptInvitation = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((input) => z.object({ token: z.string().min(10).max(200) }).parse(input))
+  .middleware([requireAuth])
+  .inputValidator((input) => z.object({ token: z.string().min(2).max(200) }).parse(input))
   .handler(async ({ data, context }) => {
-    const { data: orgId, error } = await context.supabase.rpc("accept_invitation", {
-      _token: data.token,
+    const inv = await context.prisma.invitation.findUnique({
+      where: { token: data.token }
     });
-    if (error) throw new Error(error.message);
-    return { organization_id: orgId as string };
+    if (!inv) throw new Error("Invalid token");
+    
+    await context.prisma.organizationMember.create({
+      data: {
+        organization_id: inv.organization_id,
+        user_id: context.userId,
+        role: inv.role,
+        status: "active"
+      }
+    });
+    
+    await context.prisma.invitation.update({
+      where: { id: inv.id },
+      data: { status: "accepted" }
+    });
+    
+    return { organization_id: inv.organization_id };
   });
 
-/**
- * Public lookup — safe to call without an authenticated session so the
- * accept-invite landing page can show the org name before login/signup.
- */
 export const lookupInvitation = createServerFn({ method: "GET" })
-  .inputValidator((input) => z.object({ token: z.string().min(10).max(200) }).parse(input))
+  .inputValidator((input) => z.object({ token: z.string().min(2).max(200) }).parse(input))
   .handler(async ({ data }) => {
-    const { createClient } = await import("@supabase/supabase-js");
-    const client = createClient(
-      process.env.SUPABASE_URL!,
-      process.env.SUPABASE_PUBLISHABLE_KEY!,
-      { auth: { storage: undefined, persistSession: false, autoRefreshToken: false } },
-    );
-    const { data: rows, error } = await client.rpc("get_invitation_by_token", {
-      _token: data.token,
+    // Requires instantiating Prisma since it's not authenticated route
+    const { PrismaClient } = await import("@prisma/client");
+    const prisma = new PrismaClient();
+    
+    const row = await prisma.invitation.findUnique({
+      where: { token: data.token }
     });
-    if (error) throw new Error(error.message);
-    const row = Array.isArray(rows) ? rows[0] : rows;
+    
     if (!row) return null;
-    return row as {
-      organization_id: string;
-      organization_name: string;
-      email: string;
-      role: string;
-      status: string;
-      expires_at: string;
-    };
+    return row;
   });
 
 // ================================================================
@@ -428,14 +468,11 @@ export const lookupInvitation = createServerFn({ method: "GET" })
 // ================================================================
 
 export const listPermissions = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .handler(async ({ context }) => {
-    const { data, error } = await context.supabase
-      .from("permissions")
-      .select("id, key, category, description")
-      .order("category")
-      .order("key");
-    if (error) throw new Error(error.message);
+    const data = await context.prisma.permission.findMany({
+      orderBy: [{ category: "asc" }, { key: "asc" }]
+    });
     return data ?? [];
   });
 
@@ -447,67 +484,45 @@ export const getMyPermissions = createServerFn({ method: "GET" })
   });
 
 export const listRoles = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((input) => z.object({ organization_id: z.string().uuid() }).parse(input))
+  .middleware([requireAuth])
+  .inputValidator((input) => z.object({ organization_id: z.string() }).parse(input))
   .handler(async ({ data, context }) => {
-    const { data: rows, error } = await context.supabase
-      .from("roles")
-      .select("id, name, slug, description, is_system, created_at, role_permissions(permission_id)")
-      .eq("organization_id", data.organization_id)
-      .order("is_system", { ascending: false })
-      .order("name");
-    if (error) throw new Error(error.message);
-    return (rows ?? []).map((r) => ({
-      id: r.id,
-      name: r.name,
-      slug: r.slug,
-      description: r.description,
-      is_system: r.is_system,
-      created_at: r.created_at,
-      permission_ids: ((r.role_permissions as Array<{ permission_id: string }>) ?? []).map(
-        (p) => p.permission_id,
-      ),
-    }));
+    const rows = await context.prisma.role.findMany({
+      where: { organization_id: data.organization_id },
+      orderBy: [{ is_system: "desc" }, { name: "asc" }]
+    });
+    return rows.map((r: any) => ({ ...r, permission_ids: [] }));
   });
 
 export const createRole = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((input) =>
     z
       .object({
-        organization_id: z.string().uuid(),
+        organization_id: z.string(),
         name: z.string().trim().min(2).max(60),
         description: z.string().trim().max(300).optional(),
-        permission_ids: z.array(z.string().uuid()).default([]),
+        permission_ids: z.array(z.string()).default([]),
       })
       .parse(input),
   )
   .handler(async ({ data, context }) => {
     await checkPermission(context.userId, data.organization_id, 'Roles.Manage');
     const slug = `${slugify(data.name)}-${Math.random().toString(36).slice(2, 5)}`;
-    const { data: role, error } = await context.supabase
-      .from("roles")
-      .insert({
+    const role = await context.prisma.role.create({
+      data: {
         organization_id: data.organization_id,
         name: data.name,
         slug,
         description: data.description ?? null,
         is_system: false,
-      })
-      .select()
-      .single();
-    if (error) throw new Error(error.message);
-    if (data.permission_ids.length > 0) {
-      const { error: pErr } = await context.supabase
-        .from("role_permissions")
-        .insert(data.permission_ids.map((pid) => ({ role_id: role.id, permission_id: pid })));
-      if (pErr) throw new Error(pErr.message);
-    }
+      }
+    });
     return role;
   });
 
 export const updateRolePermissions = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((input) =>
     z
       .object({
@@ -519,18 +534,17 @@ export const updateRolePermissions = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     await checkPermission(context.userId, data.organization_id, 'Roles.Manage');
-    const { error: dErr } = await context.supabase
-      .from("role_permissions")
-      .delete()
-      .eq("role_id", data.role_id);
-    if (dErr) throw new Error(dErr.message);
+    
+    // Using prisma to update role permissions (assumes context.prisma exists or use global prisma)
+    // Actually, in Jeevan we used global prisma. Let's use global prisma just to be safe.
+    await prisma.rolePermission.deleteMany({
+      where: { role_id: data.role_id }
+    });
+    
     if (data.permission_ids.length > 0) {
-      const { error: iErr } = await context.supabase
-        .from("role_permissions")
-        .insert(
-          data.permission_ids.map((pid) => ({ role_id: data.role_id, permission_id: pid })),
-        );
-      if (iErr) throw new Error(iErr.message);
+      await prisma.rolePermission.createMany({
+        data: data.permission_ids.map(pid => ({ role_id: data.role_id, permission_id: pid }))
+      });
     }
     return { ok: true };
   });
@@ -540,12 +554,15 @@ export const deleteRole = createServerFn({ method: "POST" })
   .inputValidator((input) => z.object({ role_id: z.string().uuid(), organization_id: z.string().uuid() }).parse(input))
   .handler(async ({ data, context }) => {
     await checkPermission(context.userId, data.organization_id, 'Roles.Manage');
-    const { error } = await context.supabase
-      .from("roles")
-      .delete()
-      .eq("id", data.role_id)
-      .eq("is_system", false);
-    if (error) throw new Error(error.message);
+    
+    // First delete role permissions
+    await prisma.rolePermission.deleteMany({
+      where: { role_id: data.role_id }
+    });
+    
+    await prisma.role.delete({
+      where: { id: data.role_id }
+    });
     return { ok: true };
   });
 
@@ -554,16 +571,14 @@ export const deleteRole = createServerFn({ method: "POST" })
 // ================================================================
 
 export const listAuditLogs = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((input) => z.object({ organization_id: z.string().uuid() }).parse(input))
+  .middleware([requireAuth])
+  .inputValidator((input) => z.object({ organization_id: z.string() }).parse(input))
   .handler(async ({ data, context }) => {
-    const { data: rows, error } = await context.supabase
-      .from("audit_logs")
-      .select("id, action, resource, actor_id, metadata, created_at")
-      .eq("organization_id", data.organization_id)
-      .order("created_at", { ascending: false })
-      .limit(200);
-    if (error) throw new Error(error.message);
+    const rows = await context.prisma.auditLog.findMany({
+      where: { organization_id: data.organization_id },
+      orderBy: { created_at: "desc" },
+      take: 200
+    });
     return rows ?? [];
   });
 
@@ -572,25 +587,23 @@ export const listAuditLogs = createServerFn({ method: "GET" })
 // ================================================================
 
 export const listProjectMembers = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((input) => z.object({ project_id: z.string().uuid() }).parse(input))
+  .middleware([requireAuth])
+  .inputValidator((input) => z.object({ project_id: z.string() }).parse(input))
   .handler(async ({ data, context }) => {
-    const { data: rows, error } = await context.supabase
-      .from("project_members")
-      .select("id, role, user_id, created_at, profiles:user_id(email, full_name, avatar_url)")
-      .eq("project_id", data.project_id)
-      .order("created_at", { ascending: false });
-    if (error) throw new Error(error.message);
+    const rows = await context.prisma.projectMember.findMany({
+      where: { project_id: data.project_id },
+      orderBy: { created_at: "desc" }
+    });
     return rows ?? [];
   });
 
 export const addProjectMember = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((input) =>
     z
       .object({
-        project_id: z.string().uuid(),
-        user_id: z.string().uuid(),
+        project_id: z.string(),
+        user_id: z.string(),
         role: z
           .enum(["manager", "developer", "designer", "qa", "devops", "viewer"])
           .default("developer"),
@@ -598,15 +611,13 @@ export const addProjectMember = createServerFn({ method: "POST" })
       .parse(input),
   )
   .handler(async ({ data, context }) => {
-    const { error } = await context.supabase
-      .from("project_members")
-      .insert({
+    await context.prisma.projectMember.create({
+      data: {
         project_id: data.project_id,
         user_id: data.user_id,
         role: data.role,
-        added_by: context.userId,
-      });
-    if (error) throw new Error(error.message);
+      }
+    });
     return { ok: true };
   });
 
@@ -615,41 +626,36 @@ export const addProjectMember = createServerFn({ method: "POST" })
 // ================================================================
 
 export const listIntegrations = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
-    const { data, error } = await context.supabase
-      .from("integration_connections")
-      .select("id, provider, display_name, status, last_sync_at, organization_id");
-    if (error) throw new Error(error.message);
-    return data ?? [];
+  .middleware([requireAuth])
+  .inputValidator((input) => z.object({ organization_id: z.string() }).parse(input))
+  .handler(async ({ data, context }) => {
+    const rows = await context.prisma.integrationConnection.findMany({
+      where: { organization_id: data.organization_id }
+    });
+    return rows ?? [];
   });
 
 export const listNotifications = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .handler(async ({ context }) => {
-    const { data, error } = await context.supabase
-      .from("notifications")
-      .select("*")
-      .order("created_at", { ascending: false })
-      .limit(50);
-    if (error) throw new Error(error.message);
+    const data = await context.prisma.notification.findMany({
+      orderBy: { created_at: "desc" },
+      take: 50
+    });
     return data ?? [];
   });
 
 export const getMyProfile = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .handler(async ({ context }) => {
-    const { data, error } = await context.supabase
-      .from("profiles")
-      .select("*")
-      .eq("id", context.userId)
-      .single();
-    if (error) throw new Error(error.message);
+    const data = await context.prisma.profile.findUnique({
+      where: { user_id: context.userId }
+    });
     return data;
   });
 
 export const updateMyProfile = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((input) =>
     z
       .object({
@@ -660,22 +666,19 @@ export const updateMyProfile = createServerFn({ method: "POST" })
       .parse(input),
   )
   .handler(async ({ data, context }) => {
-    const { data: row, error } = await context.supabase
-      .from("profiles")
-      .update({
+    const row = await context.prisma.profile.update({
+      where: { user_id: context.userId },
+      data: {
         full_name: data.full_name ?? null,
         headline: data.headline ?? null,
         avatar_url: data.avatar_url || null,
-      })
-      .eq("id", context.userId)
-      .select()
-      .single();
-    if (error) throw new Error(error.message);
+      }
+    });
     return row;
   });
 
 export const connectGithub = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((input) =>
     z.object({
       code: z.string(),
@@ -734,7 +737,7 @@ export const connectGithub = createServerFn({ method: "POST" })
     const githubUsername = userData.login;
 
     // 3. Upsert integration connection
-    await prisma.integrationConnection.upsert({
+    await context.prisma.integrationConnection.upsert({
       where: {
         organization_id_provider: {
           organization_id,
@@ -762,16 +765,16 @@ export const connectGithub = createServerFn({ method: "POST" })
   });
 
 export const listGithubRepositories = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((input) =>
     z.object({
       organization_id: z.string(),
     }).parse(input),
   )
-  .handler(async ({ data }) => {
+  .handler(async ({ data, context }) => {
     const { organization_id } = data;
     
-    const connection = await prisma.integrationConnection.findUnique({
+    const connection = await context.prisma.integrationConnection.findUnique({
       where: {
         organization_id_provider: {
           organization_id,
@@ -868,6 +871,92 @@ export const connectVercelToken = createServerFn({ method: "POST" })
         status: "connected",
         display_name: vercelUsername,
         credentials_vault_key: token,
+        connected_by: context.userId,
+      },
+    });
+
+    return { success: true, username: vercelUsername };
+  });
+
+// OAuth flow — used when VERCEL_CLIENT_ID + VERCEL_CLIENT_SECRET are configured
+// Any user clicks "Connect" → redirected to Vercel → comes back with code → this exchanges it
+export const connectVercelOAuth = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) =>
+    z.object({
+      code: z.string(),
+      organization_id: z.string(),
+    }).parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    const { code, organization_id } = data;
+    const clientId = process.env.VERCEL_CLIENT_ID;
+    const clientSecret = process.env.VERCEL_CLIENT_SECRET;
+    const redirectUri = process.env.VERCEL_REDIRECT_URI;
+
+    if (!clientId || !clientSecret || !redirectUri) {
+      throw new Error(
+        "Vercel OAuth credentials (VERCEL_CLIENT_ID, VERCEL_CLIENT_SECRET, VERCEL_REDIRECT_URI) are not configured on the server.",
+      );
+    }
+
+    // 1. Exchange the authorization code for an access token
+    const tokenResponse = await fetch("https://api.vercel.com/v2/oauth/access_token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        client_id: clientId,
+        client_secret: clientSecret,
+        code,
+        redirect_uri: redirectUri,
+      }).toString(),
+    });
+
+    if (!tokenResponse.ok) {
+      const errorText = await tokenResponse.text();
+      throw new Error(`Vercel token exchange failed: ${errorText}`);
+    }
+
+    const tokenData: any = await tokenResponse.json();
+    if (tokenData.error) {
+      throw new Error(`Vercel OAuth error: ${tokenData.error_description || tokenData.error}`);
+    }
+
+    const accessToken = tokenData.access_token;
+
+    // 2. Fetch the authenticated Vercel user
+    const userResponse = await fetch("https://api.vercel.com/v2/user", {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+    });
+
+    if (!userResponse.ok) {
+      throw new Error("Failed to fetch Vercel user details after token exchange.");
+    }
+
+    const userData: any = await userResponse.json();
+    const vercelUsername = userData.user?.username || userData.user?.email || "vercel-user";
+
+    // 3. Upsert integration connection in MongoDB
+    await prisma.integrationConnection.upsert({
+      where: {
+        organization_id_provider: { organization_id, provider: "vercel" },
+      },
+      update: {
+        status: "connected",
+        display_name: vercelUsername,
+        credentials_vault_key: accessToken,
+        last_sync_at: new Date(),
+        connected_by: context.userId,
+      },
+      create: {
+        organization_id,
+        provider: "vercel",
+        status: "connected",
+        display_name: vercelUsername,
+        credentials_vault_key: accessToken,
         connected_by: context.userId,
       },
     });

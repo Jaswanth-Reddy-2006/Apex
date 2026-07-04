@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { Loader2, AlertCircle, CheckCircle2 } from "lucide-react";
-import { connectGithub, connectVercelToken } from "@/lib/api.functions";
+import { connectGithub, connectVercelOAuth } from "@/lib/api.functions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 
@@ -18,7 +18,7 @@ function IntegrationsCallbackPage() {
   const navigate = useNavigate();
   const search = useSearch({ from: "/_authenticated/integrations-callback" });
   const connectGithubFn = useServerFn(connectGithub);
-  const connectVercelFn = useServerFn(connectVercelToken);
+  const connectVercelFn = useServerFn(connectVercelOAuth);
 
   const [status, setStatus] = useState<"loading" | "success" | "error">("loading");
   const [errorMessage, setErrorMessage] = useState("");

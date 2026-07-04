@@ -14,6 +14,7 @@ dotenv.config({ path: path.resolve(__dirname, "../.env") });
 
 import * as apiFunctions from "./services/api.functions.js";
 import * as chatFunctions from "./services/chat.functions.js";
+import * as authFunctions from "./services/auth.functions.js";
 import { Route as chatApiRoute } from "./routes/api/chat.js";
 
 const app = express();
@@ -66,6 +67,7 @@ app.use((req, res, next) => {
 const allFunctions: Record<string, any> = {
   ...apiFunctions,
   ...chatFunctions,
+  ...authFunctions,
 };
 
 app.all("/api/functions/:name", async (req, res) => {
