@@ -21,6 +21,8 @@ import {
   listGithubRepositories,
   listGitlabRepositories,
   listNotionPages,
+  connectGoogleDrive,
+  listGoogleDriveFiles,
 } from "@/lib/api.functions";
 import { INTEGRATIONS, type IntegrationDefinition } from "@/lib/integrations-catalog";
 import { useOrg } from "@/lib/org-context";
