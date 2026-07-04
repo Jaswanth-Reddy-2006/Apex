@@ -28,6 +28,7 @@ import {
   updateActionStatus,
   executeAgentGoal,
   seedAutonomousDemo,
+  getPaymentConsole,
 } from "@/lib/api.functions";
 import { PageHeader } from "@/components/app/page-header";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -37,6 +38,36 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
+
+function AgentWalletCard({ walletName, wallets }: { walletName: string; wallets: any[] }) {
+  const wallet = wallets.find((w) => w.agent_name === walletName);
+  if (!wallet) return null;
+  return (
+    <div className="rounded-lg border border-border bg-muted/20 p-3 mt-4 flex items-center justify-between text-xs">
+      <div className="space-y-0.5">
+        <span className="text-[10px] text-muted-foreground uppercase font-semibold flex items-center gap-1">
+          <Fingerprint className="h-3 w-3 text-primary" />
+          Linked Agent Wallet
+        </span>
+        <p className="font-semibold text-foreground">{wallet.agent_name}</p>
+        <p className="font-mono text-[10px] text-muted-foreground">{wallet.wallet_address.slice(0, 10)}...{wallet.wallet_address.slice(-6)}</p>
+      </div>
+      <div className="text-right space-y-1">
+        <div className="flex items-center gap-1.5 justify-end">
+          <Badge variant="outline" className={`font-mono text-[9px] uppercase ${wallet.status === "frozen" ? "text-destructive border-destructive/20 bg-destructive-soft" : "text-success border-success/20 bg-success-soft"}`}>
+            {wallet.status}
+          </Badge>
+          {wallet.auto_delegation && (
+            <Badge variant="secondary" className="bg-primary-soft text-primary text-[8px] font-semibold border-none">
+              Auto-Approve
+            </Badge>
+          )}
+        </div>
+        <p className="text-[11px] text-muted-foreground">Spent: <span className="font-semibold text-foreground">${wallet.spent_today} / ${wallet.daily_limit}</span></p>
+      </div>
+    </div>
+  );
+}
 
 export const Route = createFileRoute("/_authenticated/autonomous-os")({
   component: AutonomousOSPage,
@@ -66,6 +97,55 @@ function AutonomousOSPage() {
     queryKey: ["autonomous-dashboard"],
     queryFn: () => getDash({ organization_id: "global" }),
   });
+
+  const getPayments = useServerFn(getPaymentConsole);
+
+  const paymentsQuery = useQuery({
+    queryKey: ["payments-console"],
+    queryFn: () => getPayments({ organization_id: "global" }),
+  });
+
+  const wallets = paymentsQuery.data?.wallets || [];
+
+  // Interactive ATS Candidate board state
+  const [candidates, setCandidates] = useState([
+    { id: "c-1", name: "Alice Smith", role: "Backend Python dev", stage: "Applied" },
+    { id: "c-2", name: "Bob Jones", role: "GTM Representative", stage: "Applied" },
+    { id: "c-3", name: "Cody Miller", role: "Systems Architect", stage: "Screening" },
+    { id: "c-4", name: "Charlie Davis", role: "Lead Designer", stage: "Interviewing" },
+    { id: "c-5", name: "Jane Miller", role: "Frontend React lead", stage: "Offer Sent" },
+  ]);
+
+  const cycleCandidateStage = async (candidateId: string) => {
+    const stages = ["Applied", "Screening", "Interviewing", "Offer Sent"];
+    let candName = "";
+    let nextStage = "";
+    setCandidates((prev) =>
+      prev.map((c) => {
+        if (c.id === candidateId) {
+          candName = c.name;
+          const idx = stages.indexOf(c.stage);
+          const nextIdx = (idx + 1) % stages.length;
+          nextStage = stages[nextIdx];
+          return { ...c, stage: nextStage };
+        }
+        return c;
+      })
+    );
+
+    if (nextStage === "Offer Sent") {
+      toast.info(`ATS: Promoted ${candName} to Offer stage. Queued offer contract & compensation transaction.`);
+      // Call execute agent goal to automatically push this offer action in the background!
+      try {
+        await executeGoal({
+          organization_id: "global",
+          goal: `Draft and send job offer letter to ${candName} for Frontend Developer`,
+          agent_type: "hiring",
+        });
+        queryClient.invalidateQueries({ queryKey: ["autonomous-dashboard"] });
+      } catch {}
+    }
+  };
 
   const seedMutation = useMutation({
     mutationFn: () => seedDemo({ organization_id: "global" }),
@@ -486,91 +566,141 @@ function AutonomousOSPage() {
                     <span>$30k/mo</span>
                   </div>
                 </div>
+
+                {simulatedRunway < 12 ? (
+                  <div className="p-3 rounded-lg border border-amber-500/30 bg-amber-500/5 text-[11px] text-amber-800 space-y-1">
+                    <p className="font-bold flex items-center gap-1">
+                      <AlertTriangle className="h-3.5 w-3.5" /> Low Runway Warning
+                    </p>
+                    <p>Runway is below 12-month safety margin. <strong>Recommendation:</strong> Shifting the GTM Agent wallet limit to organic channels will extend runway by +1.8 months.</p>
+                  </div>
+                ) : (
+                  <div className="p-3 rounded-lg border border-emerald-500/30 bg-emerald-500/5 text-[11px] text-emerald-800 space-y-1">
+                    <p className="font-bold flex items-center gap-1">
+                      <CheckCircle2 className="h-3.5 w-3.5" /> Runway Stable
+                    </p>
+                    <p>Runway is within healthy thresholds. Agent auto-delegation limits are safe to remain active.</p>
+                  </div>
+                )}
               </CardContent>
             </Card>
 
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm font-semibold">Financial Ledger Outlines</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="flex justify-between items-center text-xs p-2 border-b border-border">
-                  <div>
-                    <p className="font-semibold text-foreground">AWS Hosting Invoice</p>
-                    <p className="text-muted-foreground">Due in 12 days</p>
+            <Card className="flex flex-col justify-between">
+              <div>
+                <CardHeader>
+                  <CardTitle className="text-sm font-semibold">Financial Ledger Outlines</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="flex justify-between items-center text-xs p-2 border-b border-border">
+                    <div>
+                      <p className="font-semibold text-foreground">AWS Hosting Invoice</p>
+                      <p className="text-muted-foreground">Due in 12 days</p>
+                    </div>
+                    <span className="font-bold text-foreground">$3,500.00</span>
                   </div>
-                  <span className="font-bold text-foreground">$3,500.00</span>
-                </div>
-                <div className="flex justify-between items-center text-xs p-2 border-b border-border">
-                  <div>
-                    <p className="font-semibold text-foreground">Brex Office Account Payment</p>
-                    <p className="text-muted-foreground">Settled</p>
+                  <div className="flex justify-between items-center text-xs p-2 border-b border-border">
+                    <div>
+                      <p className="font-semibold text-foreground">Brex Office Account Payment</p>
+                      <p className="text-muted-foreground">Settled</p>
+                    </div>
+                    <span className="font-bold text-foreground">$1,250.00</span>
                   </div>
-                  <span className="font-bold text-foreground">$1,250.00</span>
-                </div>
-                <div className="flex justify-between items-center text-xs p-2">
-                  <div>
-                    <p className="font-semibold text-foreground">GSuite Workspace seats</p>
-                    <p className="text-muted-foreground">Settled</p>
+                  <div className="flex justify-between items-center text-xs p-2">
+                    <div>
+                      <p className="font-semibold text-foreground">GSuite Workspace seats</p>
+                      <p className="text-muted-foreground">Settled</p>
+                    </div>
+                    <span className="font-bold text-foreground">$240.00</span>
                   </div>
-                  <span className="font-bold text-foreground">$240.00</span>
-                </div>
-              </CardContent>
+                </CardContent>
+              </div>
+              <div className="p-4 border-t border-border bg-muted/10">
+                <AgentWalletCard walletName="Finance_Ops_Agent" wallets={wallets} />
+              </div>
             </Card>
           </div>
         </TabsContent>
 
         <TabsContent value="hiring">
           <Card>
-            <CardHeader>
-              <CardTitle className="text-sm font-semibold">Mock ATS Pipeline board</CardTitle>
-              <CardDescription>Collaborative Hiring Agent manages applicants and queues offers.</CardDescription>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle className="text-sm font-semibold">Interactive ATS Pipeline Board</CardTitle>
+                <CardDescription>Click a candidate card to advance their screening and trigger automated actions.</CardDescription>
+              </div>
+              <div className="w-80 border-l border-border pl-4">
+                <AgentWalletCard walletName="Hiring_ATS_Agent" wallets={wallets} />
+              </div>
             </CardHeader>
             <CardContent>
               <div className="grid gap-4 sm:grid-cols-4">
+                {/* Applied column */}
                 <div className="bg-muted/30 p-3 rounded-lg space-y-2">
                   <p className="font-semibold text-xs text-muted-foreground uppercase flex items-center justify-between">
-                    Applied <Badge variant="secondary">2</Badge>
+                    Applied <Badge variant="secondary">{candidates.filter(c => c.stage === "Applied").length}</Badge>
                   </p>
-                  <div className="bg-card p-2 rounded border border-border text-xs space-y-0.5">
-                    <p className="font-medium text-foreground">Alice Smith</p>
-                    <p className="text-muted-foreground text-[10px]">Backend Python dev</p>
-                  </div>
-                  <div className="bg-card p-2 rounded border border-border text-xs space-y-0.5">
-                    <p className="font-medium text-foreground">Bob Jones</p>
-                    <p className="text-muted-foreground text-[10px]">GTM Representative</p>
-                  </div>
+                  {candidates.filter(c => c.stage === "Applied").map(c => (
+                    <div
+                      key={c.id}
+                      onClick={() => cycleCandidateStage(c.id)}
+                      className="bg-card p-2 rounded border border-border text-xs space-y-0.5 cursor-pointer hover:border-primary hover:shadow-sm transition-all"
+                    >
+                      <p className="font-medium text-foreground">{c.name}</p>
+                      <p className="text-muted-foreground text-[10px]">{c.role}</p>
+                    </div>
+                  ))}
                 </div>
 
+                {/* Screening column */}
                 <div className="bg-muted/30 p-3 rounded-lg space-y-2">
                   <p className="font-semibold text-xs text-muted-foreground uppercase flex items-center justify-between">
-                    Screening <Badge variant="secondary">1</Badge>
+                    Screening <Badge variant="secondary">{candidates.filter(c => c.stage === "Screening").length}</Badge>
                   </p>
-                  <div className="bg-card p-2 rounded border border-border text-xs space-y-0.5">
-                    <p className="font-medium text-foreground">Cody Miller</p>
-                    <p className="text-muted-foreground text-[10px]">Systems Architect</p>
-                  </div>
+                  {candidates.filter(c => c.stage === "Screening").map(c => (
+                    <div
+                      key={c.id}
+                      onClick={() => cycleCandidateStage(c.id)}
+                      className="bg-card p-2 rounded border border-border text-xs space-y-0.5 cursor-pointer hover:border-primary hover:shadow-sm transition-all"
+                    >
+                      <p className="font-medium text-foreground">{c.name}</p>
+                      <p className="text-muted-foreground text-[10px]">{c.role}</p>
+                    </div>
+                  ))}
                 </div>
 
+                {/* Interviewing column */}
                 <div className="bg-muted/30 p-3 rounded-lg space-y-2">
                   <p className="font-semibold text-xs text-muted-foreground uppercase flex items-center justify-between">
-                    Interviewing <Badge variant="secondary">1</Badge>
+                    Interviewing <Badge variant="secondary">{candidates.filter(c => c.stage === "Interviewing").length}</Badge>
                   </p>
-                  <div className="bg-card p-2 rounded border border-border text-xs space-y-0.5">
-                    <p className="font-medium text-foreground">Charlie Davis</p>
-                    <p className="text-muted-foreground text-[10px]">Lead Designer</p>
-                  </div>
+                  {candidates.filter(c => c.stage === "Interviewing").map(c => (
+                    <div
+                      key={c.id}
+                      onClick={() => cycleCandidateStage(c.id)}
+                      className="bg-card p-2 rounded border border-border text-xs space-y-0.5 cursor-pointer hover:border-primary hover:shadow-sm transition-all"
+                    >
+                      <p className="font-medium text-foreground">{c.name}</p>
+                      <p className="text-muted-foreground text-[10px]">{c.role}</p>
+                    </div>
+                  ))}
                 </div>
 
+                {/* Offer Sent column */}
                 <div className="bg-muted/30 p-3 rounded-lg space-y-2">
                   <p className="font-semibold text-xs text-muted-foreground uppercase flex items-center justify-between">
-                    Offer Sent <Badge variant="secondary">1</Badge>
+                    Offer Sent <Badge variant="secondary">{candidates.filter(c => c.stage === "Offer Sent").length}</Badge>
                   </p>
-                  <div className="bg-amber-500/10 p-2 rounded border border-amber-500/20 text-xs space-y-0.5">
-                    <p className="font-medium text-amber-800">Jane Miller</p>
-                    <p className="text-amber-700 text-[10px]">Frontend React lead</p>
-                    <Badge variant="outline" className="text-[8px] mt-1 bg-amber-500/20 text-amber-800 border-amber-500/30">Awaiting Signature</Badge>
-                  </div>
+                  {candidates.filter(c => c.stage === "Offer Sent").map(c => (
+                    <div
+                      key={c.id}
+                      onClick={() => cycleCandidateStage(c.id)}
+                      className="bg-amber-500/10 p-2 rounded border border-amber-500/20 text-xs space-y-0.5 cursor-pointer hover:border-amber-500 hover:shadow-sm transition-all"
+                    >
+                      <p className="font-medium text-amber-800">{c.name}</p>
+                      <p className="text-amber-700 text-[10px]">{c.role}</p>
+                      <Badge variant="outline" className="text-[8px] mt-1 bg-amber-500/20 text-amber-800 border-amber-500/30">Awaiting Signature</Badge>
+                    </div>
+                  ))}
                 </div>
               </div>
             </CardContent>
@@ -579,34 +709,39 @@ function AutonomousOSPage() {
 
         <TabsContent value="legal">
           <div className="grid gap-4 md:grid-cols-2">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm font-semibold">Active Corporate Templates</CardTitle>
-                <CardDescription>Delaware C-Corp optimized legal documents ready to sign.</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="flex items-center justify-between p-2.5 rounded-lg border border-border hover:bg-muted/20 cursor-pointer text-xs">
-                  <div className="flex items-center gap-2">
-                    <FileCheck className="h-4 w-4 text-emerald-600" />
-                    <span>Mutual Non-Disclosure Agreement (NDA)</span>
+            <Card className="flex flex-col justify-between">
+              <div>
+                <CardHeader>
+                  <CardTitle className="text-sm font-semibold">Active Corporate Templates</CardTitle>
+                  <CardDescription>Delaware C-Corp optimized legal documents ready to sign.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="flex items-center justify-between p-2.5 rounded-lg border border-border hover:bg-muted/20 cursor-pointer text-xs">
+                    <div className="flex items-center gap-2">
+                      <FileCheck className="h-4 w-4 text-emerald-600" />
+                      <span>Mutual Non-Disclosure Agreement (NDA)</span>
+                    </div>
+                    <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
                   </div>
-                  <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
-                </div>
-                <div className="flex items-center justify-between p-2.5 rounded-lg border border-border hover:bg-muted/20 cursor-pointer text-xs">
-                  <div className="flex items-center gap-2">
-                    <FileCheck className="h-4 w-4 text-emerald-600" />
-                    <span>Fast-track IP Assignment Provision</span>
+                  <div className="flex items-center justify-between p-2.5 rounded-lg border border-border hover:bg-muted/20 cursor-pointer text-xs">
+                    <div className="flex items-center gap-2">
+                      <FileCheck className="h-4 w-4 text-emerald-600" />
+                      <span>Fast-track IP Assignment Provision</span>
+                    </div>
+                    <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
                   </div>
-                  <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
-                </div>
-                <div className="flex items-center justify-between p-2.5 rounded-lg border border-border hover:bg-muted/20 cursor-pointer text-xs">
-                  <div className="flex items-center gap-2">
-                    <FileCheck className="h-4 w-4 text-emerald-600" />
-                    <span>Standard Advisory Agreement Token</span>
+                  <div className="flex items-center justify-between p-2.5 rounded-lg border border-border hover:bg-muted/20 cursor-pointer text-xs">
+                    <div className="flex items-center gap-2">
+                      <FileCheck className="h-4 w-4 text-emerald-600" />
+                      <span>Standard Advisory Agreement Token</span>
+                    </div>
+                    <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
                   </div>
-                  <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
-                </div>
-              </CardContent>
+                </CardContent>
+              </div>
+              <div className="p-4 border-t border-border bg-muted/10">
+                <AgentWalletCard walletName="Legal_Docs_Agent" wallets={wallets} />
+              </div>
             </Card>
 
             <Card>
@@ -633,9 +768,14 @@ function AutonomousOSPage() {
 
         <TabsContent value="gtm">
           <Card>
-            <CardHeader>
-              <CardTitle className="text-sm font-semibold">GTM Sales & Campaigns</CardTitle>
-              <CardDescription>Collaborate with the GTM Agent to construct marketing pipeline copies.</CardDescription>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle className="text-sm font-semibold">GTM Sales & Campaigns</CardTitle>
+                <CardDescription>Collaborate with the GTM Agent to construct marketing pipeline copies.</CardDescription>
+              </div>
+              <div className="w-80 border-l border-border pl-4">
+                <AgentWalletCard walletName="GTM_Campaign_Agent" wallets={wallets} />
+              </div>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid gap-4 sm:grid-cols-3">
@@ -681,34 +821,39 @@ function AutonomousOSPage() {
 
         <TabsContent value="fundraising">
           <div className="grid gap-4 md:grid-cols-2">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm font-semibold">Seed Investor CRM Pipeline</CardTitle>
-                <CardDescription>Targeting VC partners for the upcoming seed round.</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="flex justify-between items-center text-xs p-2 border-b border-border">
-                  <div>
-                    <p className="font-semibold text-foreground">VenturePartners VC</p>
-                    <p className="text-muted-foreground">Stage: NDA Signed / Due diligence</p>
+            <Card className="flex flex-col justify-between">
+              <div>
+                <CardHeader>
+                  <CardTitle className="text-sm font-semibold">Seed Investor CRM Pipeline</CardTitle>
+                  <CardDescription>Targeting VC partners for the upcoming seed round.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="flex justify-between items-center text-xs p-2 border-b border-border">
+                    <div>
+                      <p className="font-semibold text-foreground">VenturePartners VC</p>
+                      <p className="text-muted-foreground">Stage: NDA Signed / Due diligence</p>
+                    </div>
+                    <Badge className="bg-emerald-500/10 text-emerald-600 border-emerald-500/20">Lead Partner</Badge>
                   </div>
-                  <Badge className="bg-emerald-500/10 text-emerald-600 border-emerald-500/20">Lead Partner</Badge>
-                </div>
-                <div className="flex justify-between items-center text-xs p-2 border-b border-border">
-                  <div>
-                    <p className="font-semibold text-foreground">SeedCapital VC</p>
-                    <p className="text-muted-foreground">Stage: Initial Intro meeting</p>
+                  <div className="flex justify-between items-center text-xs p-2 border-b border-border">
+                    <div>
+                      <p className="font-semibold text-foreground">SeedCapital VC</p>
+                      <p className="text-muted-foreground">Stage: Initial Intro meeting</p>
+                    </div>
+                    <Badge variant="outline">Pipeline</Badge>
                   </div>
-                  <Badge variant="outline">Pipeline</Badge>
-                </div>
-                <div className="flex justify-between items-center text-xs p-2">
-                  <div>
-                    <p className="font-semibold text-foreground">AlphaAngels syndicate</p>
-                    <p className="text-muted-foreground">Stage: Pitch Deck Shared</p>
+                  <div className="flex justify-between items-center text-xs p-2">
+                    <div>
+                      <p className="font-semibold text-foreground">AlphaAngels syndicate</p>
+                      <p className="text-muted-foreground">Stage: Pitch Deck Shared</p>
+                    </div>
+                    <Badge variant="outline">Pipeline</Badge>
                   </div>
-                  <Badge variant="outline">Pipeline</Badge>
-                </div>
-              </CardContent>
+                </CardContent>
+              </div>
+              <div className="p-4 border-t border-border bg-muted/10">
+                <AgentWalletCard walletName="Fundraising_CRM_Agent" wallets={wallets} />
+              </div>
             </Card>
 
             <Card>

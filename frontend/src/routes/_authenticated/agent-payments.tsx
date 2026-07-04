@@ -29,6 +29,7 @@ import {
   approveEscalatedTransaction,
   seedPaymentsDemo,
   listProjects,
+  toggleWalletAutoDelegation,
 } from "@/lib/api.functions";
 import { PageHeader } from "@/components/app/page-header";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -52,6 +53,7 @@ function AgentPaymentsPage() {
   const approveTx = useServerFn(approveEscalatedTransaction);
   const seedDemo = useServerFn(seedPaymentsDemo);
   const projectsFn = useServerFn(listProjects);
+  const autoDelegationFn = useServerFn(toggleWalletAutoDelegation);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [newAgentName, setNewAgentName] = useState("");
@@ -121,6 +123,18 @@ function AgentPaymentsPage() {
     },
     onError: (err: any) => {
       toast.error(err.message || "Failed to toggle freeze");
+    },
+  });
+
+  const autoDelegationMutation = useMutation({
+    mutationFn: ({ walletId, auto_delegation }: { walletId: string; auto_delegation: boolean }) =>
+      autoDelegationFn({ organization_id: "global", wallet_id: walletId, auto_delegation }),
+    onSuccess: (_, variables) => {
+      toast.success(`Auto-delegation successfully ${variables.auto_delegation ? "enabled" : "disabled"}!`);
+      queryClient.invalidateQueries({ queryKey: ["payments-console"] });
+    },
+    onError: (err: any) => {
+      toast.error(err.message || "Failed to update auto-delegation");
     },
   });
 
@@ -392,6 +406,25 @@ function AgentPaymentsPage() {
                     }`}>
                       {wallet.reputation_score}%
                     </Badge>
+                  </div>
+
+                  {/* Auto-delegation setting */}
+                  <div className="flex justify-between items-center text-xs pt-1 border-t border-border/50">
+                    <span className="text-muted-foreground">Auto-Delegation (under $30):</span>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className={`h-7 px-2 font-semibold ${wallet.auto_delegation ? "bg-primary-soft text-primary border-primary/20" : "text-muted-foreground border-border"}`}
+                      onClick={() =>
+                        autoDelegationMutation.mutate({
+                          walletId: wallet.id,
+                          auto_delegation: !wallet.auto_delegation,
+                        })
+                      }
+                      disabled={autoDelegationMutation.isPending}
+                    >
+                      {wallet.auto_delegation ? "Enabled" : "Disabled"}
+                    </Button>
                   </div>
                 </CardContent>
                 <div className="p-4 pt-0 border-t border-border mt-2 flex justify-end">

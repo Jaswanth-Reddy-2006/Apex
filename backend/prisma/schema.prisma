@@ -340,6 +340,7 @@ model AgentWallet {
   spent_today      Float    @default(0.0)
   status           String   @default("active") // active, frozen
   reputation_score Float    @default(95.0)
+  auto_delegation  Boolean  @default(false)
   created_at       DateTime @default(now())
 
   @@map("agent_wallets")

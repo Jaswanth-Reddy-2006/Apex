@@ -53,3 +53,4 @@ export const toggleWalletFreeze = createClientFn("toggleWalletFreeze", "POST") a
 export const simulateAgentTransaction = createClientFn("simulateAgentTransaction", "POST") as typeof backendApi.simulateAgentTransaction;
 export const approveEscalatedTransaction = createClientFn("approveEscalatedTransaction", "POST") as typeof backendApi.approveEscalatedTransaction;
 export const seedPaymentsDemo = createClientFn("seedPaymentsDemo", "POST") as typeof backendApi.seedPaymentsDemo;
+export const toggleWalletAutoDelegation = createClientFn("toggleWalletAutoDelegation", "POST") as typeof backendApi.toggleWalletAutoDelegation;

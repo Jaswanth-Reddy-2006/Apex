@@ -122,6 +122,37 @@ export const toggleWalletFreeze = createServerFn({ method: "POST" })
     return { success: true, wallet };
   });
 
+export const toggleWalletAutoDelegation = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((input) =>
+    z.object({
+      organization_id: z.string(),
+      wallet_id: z.string(),
+      auto_delegation: z.boolean(),
+    }).parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    const { organization_id, wallet_id, auto_delegation } = data;
+    await verifyPermission(context, organization_id, "Integrations.Create");
+
+    const wallet = await context.prisma.agentWallet.update({
+      where: { id: wallet_id },
+      data: { auto_delegation },
+    });
+
+    // Audit log
+    await context.prisma.auditLog.create({
+      data: {
+        action: `Set Auto-Delegation to ${auto_delegation} for Agent Wallet: ${wallet.agent_name}`,
+        user_id: context.userId,
+        organization_id,
+        metadata: { wallet_id, auto_delegation },
+      },
+    });
+
+    return { success: true, wallet };
+  });
+
 export const simulateAgentTransaction = createServerFn({ method: "POST" })
   .middleware([requireAuth])
   .inputValidator((input) =>
@@ -174,35 +205,41 @@ export const simulateAgentTransaction = createServerFn({ method: "POST" })
     
     if (projectedSpend > wallet.daily_limit) {
       traces.push(`[Policy Engine] WARNING: Projected spend ($${projectedSpend}) exceeds Daily Cap ($${wallet.daily_limit}).`);
-      traces.push(`[Policy Engine] Escalating transaction to human approval gate.`);
+      
+      // Auto-delegation check
+      if (wallet.auto_delegation && wallet.reputation_score >= 90 && amount <= 30.0) {
+        traces.push(`[Policy Engine] AUTO-DELEGATION BYPASS: Settle authorized autonomously. Amount ($${amount}) is within the $30 auto-delegation safety envelope and wallet reputation score is high (${wallet.reputation_score}%).`);
+      } else {
+        traces.push(`[Policy Engine] Escalating transaction to human approval gate.`);
 
-      const transaction = await context.prisma.agentTransaction.create({
-        data: {
-          organization_id,
-          wallet_id,
-          recipient_agent,
-          amount,
-          purpose,
-          risk_score: 0.75,
-          status: "pending_approval",
-          trace: "Exceeds daily spending limit policy.",
-        },
-      });
+        const transaction = await context.prisma.agentTransaction.create({
+          data: {
+            organization_id,
+            wallet_id,
+            recipient_agent,
+            amount,
+            purpose,
+            risk_score: 0.75,
+            status: "pending_approval",
+            trace: "Exceeds daily spending limit policy.",
+          },
+        });
 
-      // Mirror as an Autonomous OS action so founder can see it there too!
-      await context.prisma.autonomousAgentAction.create({
-        data: {
-          organization_id,
-          agent_type: "finance",
-          action_type: "agent_payment_escalation",
-          description: `Authorize Agent Payment: $${amount} from ${wallet.agent_name} to ${recipient_agent}`,
-          trace: `Agent requested $${amount} for ${purpose}. Exceeds daily budget.`,
-          status: "pending",
-          payload: { transaction_id: transaction.id, amount, recipient: recipient_agent },
-        },
-      });
+        // Mirror as an Autonomous OS action so founder can see it there too!
+        await context.prisma.autonomousAgentAction.create({
+          data: {
+            organization_id,
+            agent_type: "finance",
+            action_type: "agent_payment_escalation",
+            description: `Authorize Agent Payment: $${amount} from ${wallet.agent_name} to ${recipient_agent}`,
+            trace: `Agent requested $${amount} for ${purpose}. Exceeds daily budget.`,
+            status: "pending",
+            payload: { transaction_id: transaction.id, amount, recipient: recipient_agent },
+          },
+        });
 
-      return { success: false, status: "pending_approval", traces, transaction };
+        return { success: false, status: "pending_approval", traces, transaction };
+      }
     }
 
     // 3. AI Anomaly Risk Assessment
@@ -409,72 +446,85 @@ export const seedPaymentsDemo = createServerFn({ method: "POST" })
       data: [
         {
           organization_id,
-          agent_name: "Coder_Copilot_Agent",
+          agent_name: "Finance_Ops_Agent",
           wallet_address: "0x3c4fde2e8e9a26388421374ac1259e847ef29302",
-          daily_limit: 50.0,
-          spent_today: 12.5,
+          daily_limit: 150.0,
+          spent_today: 15.0,
           status: "active",
-          reputation_score: 99.2,
+          reputation_score: 98.0,
+          auto_delegation: true,
         },
         {
           organization_id,
-          agent_name: "Data_Indexer_RAG",
+          agent_name: "Hiring_ATS_Agent",
           wallet_address: "0xf8574ac193023c4fde2e8e9a26388421259e847e",
           daily_limit: 100.0,
-          spent_today: 64.0,
+          spent_today: 0.0,
           status: "active",
-          reputation_score: 95.8,
+          reputation_score: 95.0,
+          auto_delegation: true,
         },
         {
           organization_id,
-          agent_name: "Vercel_AutoDeployer",
+          agent_name: "Legal_Docs_Agent",
           wallet_address: "0xe8e9a26388421374ac1259e847ef293023c4fde28",
-          daily_limit: 150.0,
+          daily_limit: 50.0,
           spent_today: 0.0,
-          status: "frozen",
-          reputation_score: 72.4,
+          status: "active",
+          reputation_score: 99.0,
+          auto_delegation: true,
+        },
+        {
+          organization_id,
+          agent_name: "GTM_Campaign_Agent",
+          wallet_address: "0xabcde26388421374ac1259e847ef293023c4fde2f",
+          daily_limit: 120.0,
+          spent_today: 45.0,
+          status: "active",
+          reputation_score: 92.0,
+          auto_delegation: false,
+        },
+        {
+          organization_id,
+          agent_name: "Fundraising_CRM_Agent",
+          wallet_address: "0x9876e26388421374ac1259e847ef293023c4fde2a",
+          daily_limit: 250.0,
+          spent_today: 0.0,
+          status: "active",
+          reputation_score: 75.0,
+          auto_delegation: false,
         },
       ],
     });
 
     const activeWallets = await context.prisma.agentWallet.findMany({ where: { organization_id } });
-    const coder = activeWallets.find((w) => w.agent_name === "Coder_Copilot_Agent");
-    const rag = activeWallets.find((w) => w.agent_name === "Data_Indexer_RAG");
-    const deployer = activeWallets.find((w) => w.agent_name === "Vercel_AutoDeployer");
+    const finance = activeWallets.find((w) => w.agent_name === "Finance_Ops_Agent");
+    const hiring = activeWallets.find((w) => w.agent_name === "Hiring_ATS_Agent");
+    const gtm = activeWallets.find((w) => w.agent_name === "GTM_Campaign_Agent");
 
     // 3. Insert mock transactions
-    if (coder && rag && deployer) {
+    if (finance && hiring && gtm) {
       await context.prisma.agentTransaction.createMany({
         data: [
           {
             organization_id,
-            wallet_id: coder.id,
-            recipient_agent: "GitHub API Gateway Merchant",
-            amount: 12.5,
-            purpose: "Query repository tree for codebase alignment check",
+            wallet_id: finance.id,
+            recipient_agent: "AWS Serverless Compute Node",
+            amount: 15.0,
+            purpose: "Spin up serverless compute instance for automated testing",
             risk_score: 0.05,
-            status: "settled",
-            trace: "Approved autonomously, within standard daily usage margins.",
-          },
-          {
-            organization_id,
-            wallet_id: rag.id,
-            recipient_agent: "OpenAI Embeddings Endpoint v3",
-            amount: 64.0,
-            purpose: "Generate MiniLM embeddings for Notion Workspace pages",
-            risk_score: 0.15,
             status: "settled",
             trace: "Approved autonomously.",
           },
           {
             organization_id,
-            wallet_id: deployer.id,
-            recipient_agent: "AWS Serverless Compute Node",
-            amount: 125.0,
-            purpose: "Spin up serverless compute instance for automated testing",
-            risk_score: 0.85,
-            status: "blocked",
-            trace: "Transaction blocked due to manual freeze safety lock.",
+            wallet_id: gtm.id,
+            recipient_agent: "MailChimp Campaign API",
+            amount: 45.0,
+            purpose: "Send newsletter updates to subscriber base",
+            risk_score: 0.15,
+            status: "settled",
+            trace: "Approved autonomously.",
           },
         ],
       });
