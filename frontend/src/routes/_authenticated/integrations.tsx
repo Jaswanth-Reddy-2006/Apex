@@ -1,26 +1,40 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useState, useEffect } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { CheckCircle2, Circle, Key, ExternalLink, Loader2 } from "lucide-react";
-import { listIntegrations, listMyOrganizations, connectVercelToken } from "@/lib/api.functions";
+import {
+  CheckCircle2,
+  Circle,
+  Lock,
+  Loader2,
+  ExternalLink,
+  Trash2,
+  Settings2,
+  BookOpen,
+  AlertTriangle,
+} from "lucide-react";
+import {
+  listIntegrations,
+  connectGitlab,
+  connectNotion,
+  disconnectIntegration,
+  listGithubRepositories,
+  listGitlabRepositories,
+  listNotionPages,
+  connectGoogleDrive,
+  listGoogleDriveFiles,
+} from "@/lib/api.functions";
 import { INTEGRATIONS, type IntegrationDefinition } from "@/lib/integrations-catalog";
 import { useOrg } from "@/lib/org-context";
-import { PageHeader } from "@/components/app/page-header";
+import { PageHeader, EmptyState } from "@/components/app/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { useState } from "react";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-  DialogDescription,
-} from "@/components/ui/dialog";
 
 export const Route = createFileRoute("/_authenticated/integrations")({
   component: IntegrationsPage,
@@ -36,36 +50,110 @@ const CATEGORY_LABELS: Record<IntegrationDefinition["category"], string> = {
 };
 
 function IntegrationsPage() {
-  const { activeOrg } = useOrg();
-  const qc = useQueryClient();
+  const { activeOrg, hasPermission, loading } = useOrg();
   const fn = useServerFn(listIntegrations);
-  const connectVercelFn = useServerFn(connectVercelToken);
+  const connectGitlabFn = useServerFn(connectGitlab);
+  const connectNotionFn = useServerFn(connectNotion);
+  const connectGdriveFn = useServerFn(connectGoogleDrive);
+  const queryClient = useQueryClient();
+
+  useEffect(() => {
+    // Clear any stuck loading/redirect toasts when mounting the integrations list page
+    toast.dismiss();
+  }, []);
   
-  const { data } = useQuery({ 
+  const [gitlabOpen, setGitlabOpen] = useState(false);
+  const [gitlabUser, setGitlabUser] = useState("");
+  const [gitlabToken, setGitlabToken] = useState("");
+  const [connectingGitlab, setConnectingGitlab] = useState(false);
+
+  const [notionOpen, setNotionOpen] = useState(false);
+  const [notionToken, setNotionToken] = useState("");
+  const [notionWorkspace, setNotionWorkspace] = useState("");
+  const [connectingNotion, setConnectingNotion] = useState(false);
+
+  const [gdriveOpen, setGdriveOpen] = useState(false);
+  const [gdriveToken, setGdriveToken] = useState("");
+  const [gdriveUser, setGdriveUser] = useState("");
+  const [connectingGdrive, setConnectingGdrive] = useState(false);
+
+  const [selectedManageIntegration, setSelectedManageIntegration] = useState<string | null>(null);
+  const disconnectFn = useServerFn(disconnectIntegration);
+
+  const disconnectMutation = useMutation({
+    mutationFn: (provider: string) =>
+      disconnectFn({
+        data: { organization_id: activeOrg?.organization_id!, provider },
+      }),
+    onSuccess: (_, provider) => {
+      toast.success(`${provider} disconnected successfully.`);
+      queryClient.invalidateQueries({ queryKey: ["integrations", activeOrg?.organization_id] });
+      setSelectedManageIntegration(null);
+    },
+    onError: (err: any) => {
+      toast.error(err.message || "Failed to disconnect integration.");
+    },
+  });
+
+  const listGithubFn = useServerFn(listGithubRepositories);
+  const listGitlabFn = useServerFn(listGitlabRepositories);
+  const listNotionPagesFn = useServerFn(listNotionPages);
+
+  const githubReposQuery = useQuery({
+    queryKey: ["github-repos-manage", activeOrg?.organization_id],
+    queryFn: () => listGithubFn({ data: { organization_id: activeOrg?.organization_id! } }),
+    enabled: selectedManageIntegration === "github" && !!activeOrg,
+  });
+
+  const gitlabReposQuery = useQuery({
+    queryKey: ["gitlab-repos-manage", activeOrg?.organization_id],
+    queryFn: () => listGitlabFn({ data: { organization_id: activeOrg?.organization_id! } }),
+    enabled: selectedManageIntegration === "gitlab" && !!activeOrg,
+  });
+
+  const notionPagesQuery = useQuery({
+    queryKey: ["notion-pages-manage", activeOrg?.organization_id],
+    queryFn: () => listNotionPagesFn({ organization_id: activeOrg?.organization_id! }),
+    enabled: selectedManageIntegration === "notion" && !!activeOrg,
+  });
+
+  const listGdriveFn = useServerFn(listGoogleDriveFiles);
+
+  const googleFilesQuery = useQuery({
+    queryKey: ["gdrive-files-manage", activeOrg?.organization_id],
+    queryFn: () => listGdriveFn({ organization_id: activeOrg?.organization_id! }),
+    enabled: selectedManageIntegration === "gdrive" && !!activeOrg,
+  });
+
+  const { data, isLoading } = useQuery({ 
     queryKey: ["integrations", activeOrg?.organization_id], 
     queryFn: () => fn({ organization_id: activeOrg?.organization_id! }),
     enabled: !!activeOrg
   });
+  
+  if (loading || isLoading) {
+    return (
+      <div className="space-y-4">
+        <Skeleton className="h-10 w-64" />
+        <Skeleton className="h-32 w-full" />
+      </div>
+    );
+  }
+
+  if (!hasPermission("Integrations.Connect")) {
+    return (
+      <div className="space-y-6">
+        <PageHeader title="Access Denied" />
+        <EmptyState
+          icon={Lock}
+          title="Permission Required"
+          description="You do not have the required permissions to view or connect integrations."
+        />
+      </div>
+    );
+  }
+
   const connected = new Map((data ?? []).map((r) => [r.provider, r]));
-
-  // Vercel token dialog state
-  const [vercelDialogOpen, setVercelDialogOpen] = useState(false);
-  const [vercelToken, setVercelToken] = useState("");
-
-  const vercelConnect = useMutation({
-    mutationFn: () =>
-      connectVercelFn({
-        data: { token: vercelToken.trim(), organization_id: activeOrg?.organization_id! },
-      }),
-    onSuccess: (result) => {
-      toast.success(`Vercel connected as @${result.username}!`);
-      qc.invalidateQueries({ queryKey: ["integrations"] });
-      qc.invalidateQueries({ queryKey: ["vercel-projects"] });
-      setVercelDialogOpen(false);
-      setVercelToken("");
-    },
-    onError: (e: Error) => toast.error(e.message),
-  });
 
   const grouped = INTEGRATIONS.reduce<Record<string, IntegrationDefinition[]>>((acc, i) => {
     (acc[i.category] ??= []).push(i);
@@ -85,43 +173,158 @@ function IntegrationsPage() {
         return;
       }
       if (!activeOrg?.organization_id) {
-        toast.error("No active organization found. Please register or join an organization first.");
+        toast.error("No active organization found.");
         return;
       }
 
       const redirectUri = encodeURIComponent(`${window.location.origin}/integrations-callback`);
       const githubOAuthUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&scope=repo,user&state=${activeOrg.organization_id}`;
       
-      toast.loading("Redirecting to GitHub for authorization...");
+      const toastId = toast.loading("Redirecting to GitHub for authorization...");
       window.location.href = githubOAuthUrl;
-
-    } else if (item.id === "vercel") {
+      setTimeout(() => {
+        toast.dismiss(toastId);
+      }, 5000);
+    } else if (item.id === "gitlab") {
       if (isConnected) {
-        const conn = connected.get("vercel");
-        toast.success(`Already connected to Vercel as: ${conn?.display_name || "Authorized User"}`);
+        const conn = connected.get("gitlab");
+        toast.success(`Already connected to GitLab as: ${conn?.display_name || "Authorized User"}`);
         return;
       }
-      
       if (!activeOrg?.organization_id) {
-        toast.error("No active organization found. Please create one first.");
+        toast.error("No active organization found.");
         return;
       }
-
-      const vercelClientId = import.meta.env.VITE_VERCEL_CLIENT_ID || "";
-      const vercelSlug = import.meta.env.VITE_VERCEL_INTEGRATION_SLUG || "";
-
-      if (vercelClientId && vercelSlug) {
-        // ✅ OAuth mode — user clicks Connect → redirected to Vercel → comes back automatically
-        const redirectUri = encodeURIComponent(`${window.location.origin}/integrations-callback`);
-        const vercelOAuthUrl = `https://vercel.com/integrations/${vercelSlug}/new?redirect_uri=${redirectUri}&state=${activeOrg.organization_id}_vercel`;
-        toast.loading("Redirecting to Vercel for authorization...");
-        window.location.href = vercelOAuthUrl;
-      } else {
-        // 🔑 Fallback — paste token manually (works without an OAuth app)
-        setVercelDialogOpen(true);
+      setGitlabUser("");
+      setGitlabToken("");
+      setGitlabOpen(true);
+    } else if (item.id === "notion") {
+      if (isConnected) {
+        const conn = connected.get("notion");
+        toast.success(`Already connected to Notion Workspace: ${conn?.display_name || "Authorized Workspace"}`);
+        return;
       }
+      if (!activeOrg?.organization_id) {
+        toast.error("No active organization found.");
+        return;
+      }
+      const clientId = import.meta.env.VITE_NOTION_CLIENT_ID || "";
+      if (!clientId) {
+        setNotionToken("");
+        setNotionWorkspace("");
+        setNotionOpen(true);
+        return;
+      }
+      const redirectUri = encodeURIComponent(`${window.location.origin}/integrations-callback`);
+      const notionOAuthUrl = `https://api.notion.com/v1/oauth/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=code&owner=user&state=notion:${activeOrg.organization_id}`;
+      
+      const toastId = toast.loading("Redirecting to Notion for authorization...");
+      window.location.href = notionOAuthUrl;
+      setTimeout(() => {
+        toast.dismiss(toastId);
+      }, 5000);
+    } else if (item.id === "gdrive") {
+      if (isConnected) {
+        const conn = connected.get("gdrive");
+        toast.success(`Already connected to Google Drive: ${conn?.display_name || "Authorized Drive"}`);
+        return;
+      }
+      if (!activeOrg?.organization_id) {
+        toast.error("No active organization found.");
+        return;
+      }
+      const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || "";
+      if (!clientId) {
+        setGdriveToken("");
+        setGdriveUser("");
+        setGdriveOpen(true);
+        return;
+      }
+      const redirectUri = encodeURIComponent(`${window.location.origin}/integrations-callback`);
+      const googleOAuthUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=code&scope=https://www.googleapis.com/auth/drive.readonly%20https://www.googleapis.com/auth/userinfo.profile&access_type=offline&prompt=consent&state=gdrive:${activeOrg.organization_id}`;
+      
+      const toastId = toast.loading("Redirecting to Google for authorization...");
+      window.location.href = googleOAuthUrl;
+      setTimeout(() => {
+        toast.dismiss(toastId);
+      }, 5000);
     } else {
       toast.info(`${item.name} integration will be enabled soon.`);
+    }
+  };
+
+  const handleGitlabConnect = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!gitlabUser || !gitlabToken) {
+      toast.error("Please enter both username and Personal Access Token.");
+      return;
+    }
+    setConnectingGitlab(true);
+    try {
+      await connectGitlabFn({
+        data: {
+          username: gitlabUser,
+          token: gitlabToken,
+          organization_id: activeOrg?.organization_id!,
+        },
+      });
+      toast.success("GitLab connected successfully!");
+      queryClient.invalidateQueries({ queryKey: ["integrations", activeOrg?.organization_id] });
+      setGitlabOpen(false);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to connect GitLab");
+    } finally {
+      setConnectingGitlab(false);
+    }
+  };
+
+  const handleNotionConnect = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!notionToken || !notionWorkspace) {
+      toast.error("Please enter both Notion Token and Workspace Name.");
+      return;
+    }
+    setConnectingNotion(true);
+    try {
+      await connectNotionFn({
+        data: {
+          token: notionToken,
+          workspaceName: notionWorkspace,
+          organization_id: activeOrg?.organization_id!,
+        },
+      });
+      toast.success("Notion connected successfully!");
+      queryClient.invalidateQueries({ queryKey: ["integrations", activeOrg?.organization_id] });
+      setNotionOpen(false);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to connect Notion");
+    } finally {
+      setConnectingNotion(false);
+    }
+  };
+
+  const handleGoogleDriveConnect = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!gdriveToken) {
+      toast.error("Please enter a Google Access Token.");
+      return;
+    }
+    setConnectingGdrive(true);
+    try {
+      await connectGdriveFn({
+        data: {
+          username: gdriveUser || "Google User",
+          token: gdriveToken,
+          organization_id: activeOrg?.organization_id!,
+        },
+      });
+      toast.success("Google Drive connected successfully!");
+      queryClient.invalidateQueries({ queryKey: ["integrations", activeOrg?.organization_id] });
+      setGdriveOpen(false);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to connect Google Drive");
+    } finally {
+      setConnectingGdrive(false);
     }
   };
 
@@ -131,66 +334,6 @@ function IntegrationsPage() {
         title="Integrations"
         description="Connect APEX to the services your team already uses."
       />
-
-      {/* Vercel Token Dialog */}
-      <Dialog open={vercelDialogOpen} onOpenChange={setVercelDialogOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-black text-white text-sm font-bold">▲</span>
-              Connect Vercel
-            </DialogTitle>
-            <DialogDescription>
-              Paste your Vercel Access Token below. APEX will verify it and connect to your Vercel account.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4 py-2">
-            <div className="rounded-lg border border-border bg-muted/40 p-3 space-y-1.5">
-              <p className="text-xs font-medium text-foreground">How to get your token:</p>
-              <ol className="text-xs text-muted-foreground space-y-1 list-decimal list-inside">
-                <li>Go to <a href="https://vercel.com/account/tokens" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline inline-flex items-center gap-0.5">vercel.com/account/tokens <ExternalLink className="h-2.5 w-2.5" /></a></li>
-                <li>Click <strong>"Create Token"</strong></li>
-                <li>Name it <strong>"APEX Integration"</strong></li>
-                <li>Set expiration → <strong>No Expiration</strong></li>
-                <li>Copy the token and paste it below</li>
-              </ol>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="vercel-token" className="flex items-center gap-1.5">
-                <Key className="h-3.5 w-3.5" />
-                Access Token
-              </Label>
-              <Input
-                id="vercel-token"
-                type="password"
-                placeholder="Paste your Vercel token here..."
-                value={vercelToken}
-                onChange={(e) => setVercelToken(e.target.value)}
-                className="font-mono text-sm"
-              />
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => { setVercelDialogOpen(false); setVercelToken(""); }}>
-              Cancel
-            </Button>
-            <Button
-              disabled={!vercelToken.trim() || vercelConnect.isPending}
-              onClick={() => vercelConnect.mutate()}
-              className="gradient-primary text-primary-foreground"
-            >
-              {vercelConnect.isPending ? (
-                <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Verifying...</>
-              ) : (
-                "Connect Vercel"
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {Object.entries(grouped).map(([cat, items]) => (
         <section key={cat} className="space-y-3">
@@ -227,15 +370,48 @@ function IntegrationsPage() {
                       </Badge>
                     )}
                   </CardHeader>
-                  <CardContent className="pt-0">
-                    <Button
-                      variant={isConnected ? "outline" : "default"}
-                      size="sm"
-                      className={isConnected ? "" : "gradient-primary text-primary-foreground"}
-                      onClick={() => handleConnectClick(i, isConnected)}
-                    >
-                      {isConnected ? "Connected" : "Connect"}
-                    </Button>
+                  <CardContent className="pt-0 space-y-3">
+                    {isConnected && conn?.created_at && (
+                      <p className="text-[11px] text-muted-foreground">
+                        Connected on {new Date(conn.created_at).toLocaleDateString()}
+                      </p>
+                    )}
+                    <div className="flex gap-2 w-full">
+                      {isConnected ? (
+                        <>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="flex-1"
+                            onClick={() => setSelectedManageIntegration(i.id)}
+                          >
+                            <Settings2 className="mr-1.5 h-3.5 w-3.5" />
+                            Manage
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="text-destructive hover:bg-destructive/10"
+                            onClick={() => {
+                              if (confirm(`Are you sure you want to disconnect ${i.name}?`)) {
+                                disconnectMutation.mutate(i.id);
+                              }
+                            }}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </>
+                      ) : (
+                        <Button
+                          variant="default"
+                          size="sm"
+                          className="w-full gradient-primary text-primary-foreground"
+                          onClick={() => handleConnectClick(i, isConnected)}
+                        >
+                          Connect
+                        </Button>
+                      )}
+                    </div>
                   </CardContent>
                 </Card>
               );
@@ -243,6 +419,301 @@ function IntegrationsPage() {
           </div>
         </section>
       ))}
+
+      <Dialog open={gitlabOpen} onOpenChange={setGitlabOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Connect GitLab</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleGitlabConnect} className="space-y-4">
+            <div>
+              <Label htmlFor="gl-user">GitLab Username</Label>
+              <Input
+                id="gl-user"
+                value={gitlabUser}
+                onChange={(e) => setGitlabUser(e.target.value)}
+                placeholder="e.g. gitlab_username"
+              />
+            </div>
+            <div>
+              <Label htmlFor="gl-token">Personal Access Token</Label>
+              <Input
+                id="gl-token"
+                type="password"
+                value={gitlabToken}
+                onChange={(e) => setGitlabToken(e.target.value)}
+                placeholder="glpat-..."
+              />
+              <p className="mt-1 text-xs text-muted-foreground">
+                Generate a token in your GitLab Settings &rarr; Access Tokens with "api" or "read_api" scope.
+              </p>
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setGitlabOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={connectingGitlab}>
+                {connectingGitlab ? <Loader2 className="h-4 w-4 animate-spin" /> : "Connect Account"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={notionOpen} onOpenChange={setNotionOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Connect Notion Workspace</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleNotionConnect} className="space-y-4">
+            <div>
+              <Label htmlFor="notion-workspace">Workspace Name</Label>
+              <Input
+                id="notion-workspace"
+                value={notionWorkspace}
+                onChange={(e) => setNotionWorkspace(e.target.value)}
+                placeholder="e.g. APEX Docs"
+              />
+            </div>
+            <div>
+              <Label htmlFor="notion-token">Internal Integration Token</Label>
+              <Input
+                id="notion-token"
+                type="password"
+                value={notionToken}
+                onChange={(e) => setNotionToken(e.target.value)}
+                placeholder="secret_..."
+              />
+              <p className="mt-1 text-xs text-muted-foreground">
+                Generate a secret token in your <a href="https://www.notion.so/my-integrations" target="_blank" rel="noreferrer" className="text-primary hover:underline">Notion Integrations Dashboard</a>.
+              </p>
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setNotionOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={connectingNotion}>
+                {connectingNotion ? <Loader2 className="h-4 w-4 animate-spin" /> : "Connect Workspace"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={selectedManageIntegration !== null}
+        onOpenChange={(open) => {
+          if (!open) setSelectedManageIntegration(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle className="capitalize flex items-center gap-2">
+              <Settings2 className="h-5 w-5 text-primary" />
+              Manage {selectedManageIntegration} Connection
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-6 py-4">
+            {/* Status section */}
+            <div className="rounded-lg border border-border p-4 bg-muted/30 flex items-center justify-between">
+              <div className="space-y-1">
+                <p className="text-xs text-muted-foreground uppercase font-semibold tracking-wider">Account Connection</p>
+                <p className="text-sm font-semibold text-foreground">
+                  {selectedManageIntegration && connected.get(selectedManageIntegration)?.display_name ? (
+                    <span>@{connected.get(selectedManageIntegration)?.display_name}</span>
+                  ) : (
+                    <span>Authorized Account</span>
+                  )}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Status: <span className="text-success font-medium">Synced & Active</span>
+                </p>
+              </div>
+
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={() => {
+                  if (selectedManageIntegration && confirm(`Are you sure you want to disconnect ${selectedManageIntegration}?`)) {
+                    disconnectMutation.mutate(selectedManageIntegration);
+                  }
+                }}
+                disabled={disconnectMutation.isPending}
+              >
+                {disconnectMutation.isPending ? (
+                  <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Disconnecting...</>
+                ) : (
+                  "Disconnect Account"
+                )}
+              </Button>
+            </div>
+
+            {/* List of synced resources (repositories or Notion pages) */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-foreground flex items-center gap-1.5">
+                  <BookOpen className="h-4 w-4 text-muted-foreground" />
+                  {selectedManageIntegration === "notion" ? "Synced Workspace Pages" : selectedManageIntegration === "gdrive" ? "Synced Google Drive Files" : "Linked Repositories"}
+                </h3>
+                <Badge variant="secondary" className="font-mono text-xs">
+                  {selectedManageIntegration === "github" && (githubReposQuery.data?.repositories?.length ?? 0)}
+                  {selectedManageIntegration === "gitlab" && (gitlabReposQuery.data?.repositories?.length ?? 0)}
+                  {selectedManageIntegration === "notion" && (notionPagesQuery.data?.pages?.length ?? 0)}
+                  {selectedManageIntegration === "gdrive" && (googleFilesQuery.data?.files?.length ?? 0)}
+                  {selectedManageIntegration && !["github", "gitlab", "notion", "gdrive"].includes(selectedManageIntegration) && 0}
+                  {" resources"}
+                </Badge>
+              </div>
+
+              {/* GitHub loading/list */}
+              {selectedManageIntegration === "github" && (
+                <div className="space-y-2 max-h-[250px] overflow-y-auto pr-1">
+                  {githubReposQuery.isLoading ? (
+                    <div className="space-y-2 py-4">
+                      <Skeleton className="h-8 w-full" />
+                      <Skeleton className="h-8 w-full" />
+                    </div>
+                  ) : githubReposQuery.data?.repositories?.length ? (
+                    githubReposQuery.data.repositories.map((repo: any) => (
+                      <div key={repo.full_name} className="flex items-center justify-between p-2.5 rounded-lg border border-border bg-card text-sm">
+                        <span className="font-medium text-foreground">{repo.full_name}</span>
+                        <a href={repo.html_url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline flex items-center gap-1 text-xs">
+                          View Repository <ExternalLink className="h-3 w-3" />
+                        </a>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-xs text-muted-foreground text-center py-4">No repositories found in this account.</p>
+                  )}
+                </div>
+              )}
+
+              {/* GitLab loading/list */}
+              {selectedManageIntegration === "gitlab" && (
+                <div className="space-y-2 max-h-[250px] overflow-y-auto pr-1">
+                  {gitlabReposQuery.isLoading ? (
+                    <div className="space-y-2 py-4">
+                      <Skeleton className="h-8 w-full" />
+                      <Skeleton className="h-8 w-full" />
+                    </div>
+                  ) : gitlabReposQuery.data?.repositories?.length ? (
+                    gitlabReposQuery.data.repositories.map((repo: any) => (
+                      <div key={repo.full_name} className="flex items-center justify-between p-2.5 rounded-lg border border-border bg-card text-sm">
+                        <span className="font-medium text-foreground">{repo.full_name}</span>
+                        <a href={repo.html_url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline flex items-center gap-1 text-xs">
+                          View Repository <ExternalLink className="h-3 w-3" />
+                        </a>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-xs text-muted-foreground text-center py-4">No repositories found in this account.</p>
+                  )}
+                </div>
+              )}
+
+              {/* Notion loading/list */}
+              {selectedManageIntegration === "notion" && (
+                <div className="space-y-2 max-h-[250px] overflow-y-auto pr-1">
+                  {notionPagesQuery.isLoading ? (
+                    <div className="space-y-2 py-4">
+                      <Skeleton className="h-8 w-full" />
+                      <Skeleton className="h-8 w-full" />
+                    </div>
+                  ) : notionPagesQuery.data?.pages?.length ? (
+                    notionPagesQuery.data.pages.map((page: any) => (
+                      <div key={page.id} className="flex items-center justify-between p-2.5 rounded-lg border border-border bg-card text-sm">
+                        <div className="flex flex-col space-y-0.5">
+                          <span className="font-medium text-foreground">{page.title}</span>
+                          {page.last_edited_time && (
+                            <span className="text-[10px] text-muted-foreground">Edited: {new Date(page.last_edited_time).toLocaleDateString()}</span>
+                          )}
+                        </div>
+                        {page.url ? (
+                          <a href={page.url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline flex items-center gap-1 text-xs">
+                            Open in Notion <ExternalLink className="h-3 w-3" />
+                          </a>
+                        ) : (
+                          <span className="text-[10px] text-muted-foreground">Synced to AI Memory</span>
+                        )}
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-xs text-muted-foreground text-center py-4">No accessible pages found in this workspace connection.</p>
+                  )}
+                </div>
+              )}
+
+              {/* Google Drive loading/list */}
+              {selectedManageIntegration === "gdrive" && (
+                <div className="space-y-2 max-h-[250px] overflow-y-auto pr-1">
+                  {googleFilesQuery.isLoading ? (
+                    <div className="space-y-2 py-4">
+                      <Skeleton className="h-8 w-full" />
+                      <Skeleton className="h-8 w-full" />
+                    </div>
+                  ) : googleFilesQuery.data?.files?.length ? (
+                    googleFilesQuery.data.files.map((file: any) => (
+                      <div key={file.id} className="flex items-center justify-between p-2.5 rounded-lg border border-border bg-card text-sm">
+                        <div className="flex flex-col space-y-0.5">
+                          <span className="font-medium text-foreground">{file.name}</span>
+                          {file.modifiedTime && (
+                            <span className="text-[10px] text-muted-foreground">Modified: {new Date(file.modifiedTime).toLocaleDateString()}</span>
+                          )}
+                        </div>
+                        <a href={file.url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline flex items-center gap-1 text-xs">
+                          Open File <ExternalLink className="h-3 w-3" />
+                        </a>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-xs text-muted-foreground text-center py-4">No accessible files found in this Google Drive connection.</p>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={gdriveOpen} onOpenChange={setGdriveOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Connect Google Drive</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleGoogleDriveConnect} className="space-y-4">
+            <div>
+              <Label htmlFor="gd-user">Display Name / Email (Optional)</Label>
+              <Input
+                id="gd-user"
+                value={gdriveUser}
+                onChange={(e) => setGdriveUser(e.target.value)}
+                placeholder="e.g. personal-drive"
+              />
+            </div>
+            <div>
+              <Label htmlFor="gd-token">Google Access Token</Label>
+              <Input
+                id="gd-token"
+                type="password"
+                value={gdriveToken}
+                onChange={(e) => setGdriveToken(e.target.value)}
+                placeholder="ya29.a0AfH6SM..."
+              />
+              <p className="mt-1 text-xs text-muted-foreground">
+                Enter a temporary Google Access Token with `drive.readonly` access to connect manual drive resources.
+              </p>
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setGdriveOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={connectingGdrive}>
+                {connectingGdrive ? <Loader2 className="h-4 w-4 animate-spin" /> : "Connect Drive"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

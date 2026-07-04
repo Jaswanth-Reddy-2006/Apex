@@ -5,6 +5,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
 import { Loader2, ArrowLeft, ArrowRight } from "lucide-react";
+
 import { createClientFn } from "@/lib/api-client";
 import { bootstrapOrganization, joinDemoOrganization } from "@/lib/api.functions";
 import { useAuth } from "@/lib/auth-context";
@@ -123,10 +124,10 @@ function AuthPage() {
   const [tab, setTab] = useState<"login" | "register">(search.mode ?? "login");
 
   useEffect(() => {
-    if (user) {
+    if (user && tab !== "register") {
       navigate({ to: search.next ?? "/dashboard", replace: true });
     }
-  }, [user, navigate, search.next]);
+  }, [user, tab, navigate, search.next]);
 
   return (
     <div className="relative flex min-h-screen items-center justify-center bg-background px-4 py-12">
@@ -250,6 +251,7 @@ function RegisterWizard() {
   const [path, setPath] = useState<"create" | "demo" | null>(null);
   const [loading, setLoading] = useState(false);
 
+  const queryClient = useQueryClient();
   const form = useForm<z.infer<typeof registerSchema>>({
     resolver: zodResolver(registerSchema),
     mode: "onBlur",

@@ -15,7 +15,7 @@ import {
   Shield,
   FileText,
   MessageSquare,
-  Triangle,
+  Cpu,
 } from "lucide-react";
 import {
   Sidebar,
@@ -42,17 +42,19 @@ type Item = {
 
 const primary: Item[] = [
   { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
+  { title: "Autonomous OS", url: "/autonomous-os", icon: Cpu },
+  { title: "Agent Payments", url: "/agent-payments", icon: CreditCard },
   { title: "AI Chat", url: "/chat", icon: MessageSquare, permission: "Chat.Access" },
   { title: "Organization", url: "/organization", icon: Building2, permission: "Org.Manage" },
   { title: "Workspaces", url: "/workspace", icon: Boxes, permission: "Workspace.View" },
   { title: "Projects", url: "/projects", icon: FolderKanban, permission: "Project.View" },
   { title: "Members", url: "/members", icon: Users, permission: "People.View" },
   { title: "Roles", url: "/roles", icon: Shield, permission: "Roles.View" },
-  { title: "Integrations", url: "/integrations", icon: Plug, permission: "Integrations.View" },
-  { title: "Vercel", url: "/vercel", icon: Triangle, permission: "Integrations.View" },
+  { title: "Integrations", url: "/integrations", icon: Plug, permission: "Integrations.Connect" },
+  { title: "Vercel", url: "/vercel", icon: Triangle, permission: "Integrations.Connect" },
   { title: "Analytics", url: "/analytics", icon: BarChart3, permission: "Analytics.View" },
-  { title: "Audit Logs", url: "/audit", icon: FileText, permission: "AuditLogs.View" },
-  { title: "Notifications", url: "/notifications", icon: Bell, permission: "Notifications.View" },
+  { title: "Audit Logs", url: "/audit", icon: FileText, permission: "Audit.View" },
+  { title: "Notifications", url: "/notifications", icon: Bell },
 ];
 
 const secondary: Item[] = [
