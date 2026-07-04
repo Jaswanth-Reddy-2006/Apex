@@ -62,6 +62,31 @@ function IntegrationsPage() {
       
       toast.loading("Redirecting to GitHub for authorization...");
       window.location.href = githubOAuthUrl;
+
+    } else if (item.id === "vercel") {
+      if (isConnected) {
+        const conn = connected.get("vercel");
+        toast.success(`Already connected to Vercel as: ${conn?.display_name || "Authorized User"}`);
+        return;
+      }
+
+      const clientId = import.meta.env.VITE_VERCEL_CLIENT_ID || "";
+      if (!clientId) {
+        toast.error("Please add VITE_VERCEL_CLIENT_ID to your frontend/.env file.");
+        return;
+      }
+
+      if (!activeOrg) {
+        toast.error("No active organization found. Please register or join an organization first.");
+        return;
+      }
+
+      const redirectUri = encodeURIComponent(`${window.location.origin}/integrations-callback`);
+      const vercelOAuthUrl = `https://vercel.com/integrations/${import.meta.env.VITE_VERCEL_INTEGRATION_SLUG}/new?redirect_uri=${redirectUri}&state=${activeOrg}_vercel`;
+
+      toast.loading("Redirecting to Vercel for authorization...");
+      window.location.href = vercelOAuthUrl;
+
     } else {
       toast.info(`${item.name} OAuth will be enabled soon. Provider slot registered.`);
     }
