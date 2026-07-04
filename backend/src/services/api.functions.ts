@@ -725,7 +725,7 @@ export const listGithubRepositories = createServerFn({ method: "GET" })
 // ================================================================
 
 export const connectVercelToken = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((input) =>
     z.object({
       token: z.string().min(10),
@@ -751,7 +751,7 @@ export const connectVercelToken = createServerFn({ method: "POST" })
     const vercelUsername = userData.user?.username || userData.user?.email || "vercel-user";
 
     // 2. Upsert integration connection in MongoDB
-    await prisma.integrationConnection.upsert({
+    await context.prisma.integrationConnection.upsert({
       where: {
         organization_id_provider: {
           organization_id,
@@ -781,7 +781,7 @@ export const connectVercelToken = createServerFn({ method: "POST" })
 // OAuth flow — used when VERCEL_CLIENT_ID + VERCEL_CLIENT_SECRET are configured
 // Any user clicks "Connect" → redirected to Vercel → comes back with code → this exchanges it
 export const connectVercelOAuth = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((input) =>
     z.object({
       code: z.string(),
@@ -840,7 +840,7 @@ export const connectVercelOAuth = createServerFn({ method: "POST" })
     const vercelUsername = userData.user?.username || userData.user?.email || "vercel-user";
 
     // 3. Upsert integration connection in MongoDB
-    await prisma.integrationConnection.upsert({
+    await context.prisma.integrationConnection.upsert({
       where: {
         organization_id_provider: { organization_id, provider: "vercel" },
       },
@@ -865,16 +865,16 @@ export const connectVercelOAuth = createServerFn({ method: "POST" })
   });
 
 export const listVercelProjects = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((input) =>
     z.object({
       organization_id: z.string(),
     }).parse(input),
   )
-  .handler(async ({ data }) => {
+  .handler(async ({ data, context }) => {
     const { organization_id } = data;
 
-    const connection = await prisma.integrationConnection.findUnique({
+    const connection = await context.prisma.integrationConnection.findUnique({
       where: {
         organization_id_provider: {
           organization_id,
@@ -919,3 +919,4 @@ export const listVercelProjects = createServerFn({ method: "GET" })
       return { projects: [] };
     }
   });
+

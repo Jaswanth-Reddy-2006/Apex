@@ -1,7 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { convertToModelMessages, streamText, type UIMessage } from "ai";
-import { createSupabasePrismaClient } from "../../lib/supabase-prisma-adapter.js";
+import { PrismaClient } from "@prisma/client";
+import jwt from "jsonwebtoken";
 import { createLovableAiGatewayProvider } from "@/lib/ai-gateway.server";
+
+const prisma = new PrismaClient();
+const JWT_SECRET = process.env.JWT_SECRET || "default_jwt_secret_please_change_in_production";
 
 type Body = {
   messages?: UIMessage[];
@@ -26,32 +30,23 @@ export const Route = createFileRoute("/api/chat")({
         const apiKey = process.env.LOVABLE_API_KEY;
         if (!apiKey) return new Response("Missing LOVABLE_API_KEY", { status: 500 });
 
-        // Decode JWT token directly to extract userId (sub claim)
-        const parts = token.split(".");
-        if (parts.length !== 3) return new Response("Unauthorized", { status: 401 });
+        // Verify JWT and extract userId
         let userId: string;
-        let email: string | undefined;
-        let userMetadata: any = undefined;
         try {
-          const payload = JSON.parse(Buffer.from(parts[1], "base64").toString("utf-8"));
-          userId = payload.sub;
-          email = payload.email;
-          userMetadata = payload.user_metadata;
+          const decoded = jwt.verify(token, JWT_SECRET) as { userId: string };
+          userId = decoded.userId;
+          if (!userId) throw new Error("Invalid token payload");
         } catch {
           return new Response("Unauthorized", { status: 401 });
         }
-        if (!userId) return new Response("Unauthorized", { status: 401 });
 
-        // Instantiate Prisma compatibility client
-        const supabase = createSupabasePrismaClient(userId, email, userMetadata) as any;
+        // Verify conversation belongs to user + project
+        const conv = await prisma.chatConversation.findUnique({
+          where: { id: conversationId },
+          select: { id: true, project_id: true, organization_id: true, title: true },
+        });
 
-        // Verify conversation belongs to user + project (RLS also enforces)
-        const { data: conv, error: convErr } = await supabase
-          .from("chat_conversations")
-          .select("id, project_id, organization_id, title")
-          .eq("id", conversationId)
-          .maybeSingle();
-        if (convErr || !conv || conv.project_id !== projectId) {
+        if (!conv || conv.project_id !== projectId) {
           return new Response("Forbidden", { status: 403 });
         }
 
@@ -62,32 +57,37 @@ export const Route = createFileRoute("/api/chat")({
             .map((p) => (p.type === "text" ? p.text : ""))
             .join("")
             .trim();
-          await supabase.from("chat_messages").insert({
-            conversation_id: conversationId,
-            project_id: projectId,
-            user_id: userId,
-            role: "user",
-            content: text,
-            attachments: (last as unknown as { attachments?: unknown }).attachments ?? [],
+
+          await prisma.chatMessage.create({
+            data: {
+              conversation_id: conversationId,
+              project_id: projectId,
+              user_id: userId,
+              role: "user",
+              content: text,
+              attachments: (last as any).attachments ?? [],
+            },
           });
+
           // Auto-title on first user message
           if (conv.title === "New chat" && text.length > 0) {
-            await supabase
-              .from("chat_conversations")
-              .update({ title: text.slice(0, 60), last_message_at: new Date().toISOString() })
-              .eq("id", conversationId);
+            await prisma.chatConversation.update({
+              where: { id: conversationId },
+              data: { title: text.slice(0, 60), last_message_at: new Date() },
+            });
           } else {
-            await supabase
-              .from("chat_conversations")
-              .update({ last_message_at: new Date().toISOString() })
-              .eq("id", conversationId);
+            await prisma.chatConversation.update({
+              where: { id: conversationId },
+              data: { last_message_at: new Date() },
+            });
           }
         }
 
         const gateway = createLovableAiGatewayProvider(apiKey);
         const model = gateway("google/gemini-3-flash-preview");
 
-        const systemPrompt = `You are APEX, an AI assistant embedded inside a specific project (id: ${projectId}). ` +
+        const systemPrompt =
+          `You are APEX, an AI assistant embedded inside a specific project (id: ${projectId}). ` +
           `You have per-project memory and MUST never reveal data from other projects. Be concise, technical, and helpful. ` +
           `Format responses in markdown.`;
 
@@ -96,18 +96,20 @@ export const Route = createFileRoute("/api/chat")({
           system: systemPrompt,
           messages: await convertToModelMessages(messages),
           onFinish: async ({ text }) => {
-            await supabase.from("chat_messages").insert({
-              conversation_id: conversationId,
-              project_id: projectId,
-              user_id: userId,
-              role: "assistant",
-              content: text,
-              model: "google/gemini-3-flash-preview",
+            await prisma.chatMessage.create({
+              data: {
+                conversation_id: conversationId,
+                project_id: projectId,
+                user_id: userId,
+                role: "assistant",
+                content: text,
+                model: "google/gemini-3-flash-preview",
+              },
             });
-            await supabase
-              .from("chat_conversations")
-              .update({ last_message_at: new Date().toISOString() })
-              .eq("id", conversationId);
+            await prisma.chatConversation.update({
+              where: { id: conversationId },
+              data: { last_message_at: new Date() },
+            });
           },
         });
 

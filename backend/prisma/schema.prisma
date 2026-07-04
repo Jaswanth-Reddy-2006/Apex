@@ -273,13 +273,8 @@ model ApiKey {
 }
 
 model IntegrationConnection {
-<<<<<<< HEAD
-  id                    String   @id @default(uuid()) @map("_id") 
-  organization_id       String   
-=======
   id                    String    @id @default(uuid()) @map("_id")
   organization_id       String
->>>>>>> origin/main
   provider              String
   display_name          String?
   status                String
