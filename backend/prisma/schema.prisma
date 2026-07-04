@@ -300,3 +300,32 @@ model IntegrationDataNode {
   
   @@map("integration_data_nodes")
 }
+
+model AutonomousAgentAction {
+  id              String   @id @default(uuid()) @map("_id")
+  organization_id String
+  agent_type      String   // finance, hiring, legal, gtm, fundraising
+  action_type     String
+  description     String
+  trace           String   // Explanation of why the agent took the action
+  status          String   // pending, approved, rejected
+  payload         Json?
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+
+  @@map("autonomous_agent_actions")
+}
+
+model AutonomousMetric {
+  id                      String   @id @default(uuid()) @map("_id")
+  organization_id         String   @unique
+  runway_months           Float    @default(12.0)
+  burn_rate               Float    @default(10000.0)
+  cash_balance            Float    @default(120000.0)
+  hiring_candidates_count Int      @default(0)
+  sales_pipeline_value    Float    @default(0.0)
+  investor_pipeline_count Int      @default(0)
+  updated_at              DateTime @updatedAt
+
+  @@map("autonomous_metrics")
+}

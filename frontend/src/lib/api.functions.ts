@@ -43,3 +43,7 @@ export const disconnectIntegration = createClientFn("disconnectIntegration", "PO
 export const connectGoogleDrive = createClientFn("connectGoogleDrive", "POST") as typeof backendApi.connectGoogleDrive;
 export const connectGoogleDriveOAuth = createClientFn("connectGoogleDriveOAuth", "POST") as typeof backendApi.connectGoogleDriveOAuth;
 export const listGoogleDriveFiles = createClientFn("listGoogleDriveFiles", "GET") as typeof backendApi.listGoogleDriveFiles;
+export const getAutonomousDashboard = createClientFn("getAutonomousDashboard", "GET") as typeof backendApi.getAutonomousDashboard;
+export const updateActionStatus = createClientFn("updateActionStatus", "POST") as typeof backendApi.updateActionStatus;
+export const executeAgentGoal = createClientFn("executeAgentGoal", "POST") as typeof backendApi.executeAgentGoal;
+export const seedAutonomousDemo = createClientFn("seedAutonomousDemo", "POST") as typeof backendApi.seedAutonomousDemo;
