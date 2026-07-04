@@ -578,7 +578,7 @@ export const updateMyProfile = createServerFn({ method: "POST" })
   });
 
 export const connectGithub = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((input) =>
     z.object({
       code: z.string(),
@@ -637,7 +637,7 @@ export const connectGithub = createServerFn({ method: "POST" })
     const githubUsername = userData.login;
 
     // 3. Upsert integration connection
-    await prisma.integrationConnection.upsert({
+    await context.prisma.integrationConnection.upsert({
       where: {
         organization_id_provider: {
           organization_id,
@@ -665,16 +665,16 @@ export const connectGithub = createServerFn({ method: "POST" })
   });
 
 export const listGithubRepositories = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((input) =>
     z.object({
       organization_id: z.string(),
     }).parse(input),
   )
-  .handler(async ({ data }) => {
+  .handler(async ({ data, context }) => {
     const { organization_id } = data;
     
-    const connection = await prisma.integrationConnection.findUnique({
+    const connection = await context.prisma.integrationConnection.findUnique({
       where: {
         organization_id_provider: {
           organization_id,

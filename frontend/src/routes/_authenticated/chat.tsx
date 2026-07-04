@@ -18,7 +18,7 @@ import {
   User as UserIcon,
   Paperclip,
 } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+
 import { PageHeader, EmptyState } from "@/components/app/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -359,10 +359,10 @@ function ChatWindow({
         api: `${import.meta.env.VITE_API_URL || "http://localhost:5000"}/api/chat`,
         body: { conversationId, projectId },
         fetch: async (input, init) => {
-          const { data: sess } = await supabase.auth.getSession();
+          const token = localStorage.getItem("apex_token");
           const headers = new Headers(init?.headers);
-          if (sess.session?.access_token) {
-            headers.set("Authorization", `Bearer ${sess.session.access_token}`);
+          if (token) {
+            headers.set("Authorization", `Bearer ${token}`);
           }
           return fetch(input as RequestInfo, { ...init, headers });
         },
@@ -425,16 +425,11 @@ function ChatWindow({
           size_bytes: f.size,
         },
       });
-      const { error: upErr } = await supabase.storage
-        .from("chat-uploads")
-        .uploadToSignedUrl(signed.path, signed.token, f);
-      if (upErr) throw upErr;
-      const { data: pub } = await supabase.storage
-        .from("chat-uploads")
-        .createSignedUrl(signed.path, 60 * 60);
+      // Placeholder for actual file upload to S3/Cloudinary/etc using signed.url
+      // await fetch(signed.upload_url, { method: "PUT", body: f });
       setAttachments((a) => [
         ...a,
-        { name: f.name, url: pub?.signedUrl ?? "", mime: f.type },
+        { name: f.name, url: signed.upload_url ?? "", mime: f.type },
       ]);
       toast.success(`Attached ${f.name}`);
     } catch (err) {

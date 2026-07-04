@@ -6,9 +6,9 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
 import { Loader2, ArrowLeft, ArrowRight } from "lucide-react";
 import { useServerFn } from "@tanstack/react-start";
-import { supabase } from "@/integrations/supabase/client";
-import { lovable } from "@/integrations/lovable/index";
 import { bootstrapOrganization } from "@/lib/api.functions";
+import { createClientFn } from "@/lib/api-client";
+import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -25,6 +25,9 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { ApexLogo } from "@/components/app/apex-logo";
 import { ThemeToggle } from "@/components/app/theme-toggle";
 import { PasswordInput } from "@/components/app/password-input";
+
+const apiLogin = createClientFn("login", "POST");
+const apiSignup = createClientFn("signup", "POST");
 
 type SearchParams = { mode?: "login" | "register"; next?: string };
 
@@ -116,13 +119,14 @@ const registerSchema = z
 function AuthPage() {
   const search = Route.useSearch();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [tab, setTab] = useState<"login" | "register">(search.mode ?? "login");
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      if (data.session) navigate({ to: search.next ?? "/dashboard", replace: true });
-    });
-  }, [navigate, search.next]);
+    if (user) {
+      navigate({ to: search.next ?? "/dashboard", replace: true });
+    }
+  }, [user, navigate, search.next]);
 
   return (
     <div className="relative flex min-h-screen items-center justify-center bg-background px-4 py-12">
@@ -151,8 +155,6 @@ function AuthPage() {
 
             <TabsContent value="login" className="mt-6">
               <LoginForm />
-              <Divider />
-              <GoogleButton />
             </TabsContent>
             <TabsContent value="register" className="mt-6">
               <RegisterWizard />
@@ -170,22 +172,10 @@ function AuthPage() {
   );
 }
 
-function Divider() {
-  return (
-    <div className="relative my-6">
-      <div className="absolute inset-0 flex items-center">
-        <span className="w-full border-t border-border" />
-      </div>
-      <div className="relative flex justify-center text-xs">
-        <span className="bg-card px-2 text-muted-foreground">or continue with</span>
-      </div>
-    </div>
-  );
-}
-
 function LoginForm() {
   const navigate = useNavigate();
   const search = Route.useSearch();
+  const { setToken } = useAuth();
   const form = useForm<z.infer<typeof loginSchema>>({
     resolver: zodResolver(loginSchema),
     defaultValues: { email: "", password: "", remember: true },
@@ -194,17 +184,16 @@ function LoginForm() {
 
   const onSubmit = form.handleSubmit(async (values) => {
     setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword({
-      email: values.email,
-      password: values.password,
-    });
-    setLoading(false);
-    if (error) {
-      toast.error(error.message);
-      return;
+    try {
+      const res = await apiLogin({ email: values.email, password: values.password });
+      setToken(res.token, res.user);
+      toast.success("Signed in");
+      navigate({ to: search.next ?? "/dashboard", replace: true });
+    } catch (error: any) {
+      toast.error(error.message || "Failed to sign in");
+    } finally {
+      setLoading(false);
     }
-    toast.success("Signed in");
-    navigate({ to: search.next ?? "/dashboard", replace: true });
   });
 
   return (
@@ -255,6 +244,7 @@ function LoginForm() {
 function RegisterWizard() {
   const navigate = useNavigate();
   const bootstrap = useServerFn(bootstrapOrganization);
+  const { setToken } = useAuth();
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
 
@@ -295,34 +285,16 @@ function RegisterWizard() {
 
   const submit = form.handleSubmit(async (values) => {
     setLoading(true);
-    // 1. Sign up the owner
-    const { data: signUp, error: signErr } = await supabase.auth.signUp({
-      email: values.email,
-      password: values.password,
-      options: {
-        emailRedirectTo: `${window.location.origin}/dashboard`,
-        data: { full_name: values.fullName, phone: values.phone },
-      },
-    });
-    if (signErr) {
-      setLoading(false);
-      toast.error(signErr.message);
-      return;
-    }
-    // 2. Ensure session — email confirmations are disabled, so sign in immediately if needed.
-    if (!signUp.session) {
-      const { error: sErr } = await supabase.auth.signInWithPassword({
+    try {
+      // 1. Sign up the owner
+      const res = await apiSignup({
         email: values.email,
         password: values.password,
+        fullName: values.fullName,
       });
-      if (sErr) {
-        setLoading(false);
-        toast.error(sErr.message);
-        return;
-      }
-    }
-    // 3. Bootstrap org + workspace + project
-    try {
+      setToken(res.token, res.user);
+
+      // 2. Bootstrap org
       await bootstrap({
         data: {
           name: values.orgName,
@@ -339,8 +311,8 @@ function RegisterWizard() {
       });
       toast.success("Organization created. Welcome to APEX.");
       navigate({ to: "/dashboard", replace: true });
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Bootstrap failed");
+    } catch (e: any) {
+      toast.error(e.message || "Failed to create organization");
     } finally {
       setLoading(false);
     }
@@ -603,51 +575,5 @@ function SelectField({
       </Select>
       {error && <p className="mt-1 text-xs text-destructive">{error}</p>}
     </div>
-  );
-}
-
-function GoogleButton() {
-  const [loading, setLoading] = useState(false);
-  const handleClick = async () => {
-    setLoading(true);
-    const result = await lovable.auth.signInWithOAuth("google", {
-      redirect_uri: window.location.origin,
-    });
-    if (result.error) {
-      setLoading(false);
-      toast.error("Google sign-in failed");
-      return;
-    }
-    if (result.redirected) return;
-    window.location.href = "/dashboard";
-  };
-  return (
-    <Button
-      type="button"
-      variant="outline"
-      className="w-full"
-      onClick={handleClick}
-      disabled={loading}
-    >
-      {loading ? (
-        <Loader2 className="h-4 w-4 animate-spin" />
-      ) : (
-        <>
-          <GoogleIcon className="mr-2 h-4 w-4" />
-          Continue with Google
-        </>
-      )}
-    </Button>
-  );
-}
-
-function GoogleIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" className={className} aria-hidden>
-      <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09Z" />
-      <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.99.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23Z" />
-      <path fill="#FBBC05" d="M5.84 14.1a6.6 6.6 0 0 1 0-4.2V7.07H2.18a11 11 0 0 0 0 9.87l3.66-2.84Z" />
-      <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84C6.71 7.31 9.14 5.38 12 5.38Z" />
-    </svg>
   );
 }

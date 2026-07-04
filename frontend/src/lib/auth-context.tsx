@@ -1,33 +1,64 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-import type { Session, User } from "@supabase/supabase-js";
-import { supabase } from "@/integrations/supabase/client";
+import { createContext, useContext, useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+
+interface User {
+  id: string;
+  email: string;
+}
 
 interface AuthState {
   user: User | null;
-  session: Session | null;
   loading: boolean;
+  setToken: (token: string, user: User) => void;
+  logout: () => void;
 }
 
-const AuthContext = createContext<AuthState>({ user: null, session: null, loading: true });
+const AuthContext = createContext<AuthState>({
+  user: null,
+  loading: true,
+  setToken: () => {},
+  logout: () => {},
+});
 
-export function AuthProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<AuthState>({ user: null, session: null, loading: true });
+export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
 
   useEffect(() => {
-    // Subscribe first
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
-      setState({ user: session?.user ?? null, session, loading: false });
-    });
-
-    // Then hydrate
-    supabase.auth.getSession().then(({ data }) => {
-      setState({ user: data.session?.user ?? null, session: data.session, loading: false });
-    });
-
-    return () => sub.subscription.unsubscribe();
+    const token = localStorage.getItem("apex_token");
+    const storedUser = localStorage.getItem("apex_user");
+    if (token && storedUser) {
+      try {
+        setUser(JSON.parse(storedUser));
+      } catch (e) {
+        localStorage.removeItem("apex_token");
+        localStorage.removeItem("apex_user");
+      }
+    }
+    setLoading(false);
   }, []);
 
-  return <AuthContext.Provider value={state}>{children}</AuthContext.Provider>;
-}
+  const setToken = (token: string, user: User) => {
+    localStorage.setItem("apex_token", token);
+    localStorage.setItem("apex_user", JSON.stringify(user));
+    setUser(user);
+  };
 
-export const useAuth = () => useContext(AuthContext);
+  const logout = () => {
+    localStorage.removeItem("apex_token");
+    localStorage.removeItem("apex_user");
+    setUser(null);
+    queryClient.clear();
+  };
+
+  return (
+    <AuthContext.Provider value={{ user, loading, setToken, logout }}>
+      {children}
+    </AuthContext.Provider>
+  );
+};
+
+export const useAuth = () => {
+  return useContext(AuthContext);
+};
