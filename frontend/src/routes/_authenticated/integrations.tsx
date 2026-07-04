@@ -101,7 +101,20 @@ function IntegrationsPage() {
         toast.error("No active organization found. Please create one first.");
         return;
       }
-      setVercelDialogOpen(true);
+
+      const vercelClientId = import.meta.env.VITE_VERCEL_CLIENT_ID || "";
+      const vercelSlug = import.meta.env.VITE_VERCEL_INTEGRATION_SLUG || "";
+
+      if (vercelClientId && vercelSlug) {
+        // ✅ OAuth mode — user clicks Connect → redirected to Vercel → comes back automatically
+        const redirectUri = encodeURIComponent(`${window.location.origin}/integrations-callback`);
+        const vercelOAuthUrl = `https://vercel.com/integrations/${vercelSlug}/new?redirect_uri=${redirectUri}&state=${activeOrg}_vercel`;
+        toast.loading("Redirecting to Vercel for authorization...");
+        window.location.href = vercelOAuthUrl;
+      } else {
+        // 🔑 Fallback — paste token manually (works without an OAuth app)
+        setVercelDialogOpen(true);
+      }
 
     } else {
       toast.info(`${item.name} integration will be enabled soon.`);
