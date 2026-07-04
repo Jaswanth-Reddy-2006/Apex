@@ -69,26 +69,26 @@
   --radius: 0.75rem;
 
   /* Surfaces — bright white base */
-  --background: oklch(0.995 0 0);
-  --foreground: oklch(0.18 0.02 265);
+  --background: #FFFFFF;
+  --foreground: #111827;
 
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.18 0.02 265);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.18 0.02 265);
+  --card: #FFFFFF;
+  --card-foreground: #111827;
+  --popover: #FFFFFF;
+  --popover-foreground: #111827;
 
-  --muted: oklch(0.97 0.005 260);
-  --muted-foreground: oklch(0.5 0.02 260);
-  --accent: oklch(0.96 0.015 260);
-  --accent-foreground: oklch(0.22 0.03 265);
+  --muted: #F8F9FC;
+  --muted-foreground: #6B7280;
+  --accent: #F8F9FC;
+  --accent-foreground: #111827;
 
-  /* Brand — indigo/violet primary, teal secondary. Same hues in dark mode. */
-  --primary: oklch(0.58 0.19 268);
-  --primary-foreground: oklch(0.99 0.005 260);
-  --primary-soft: oklch(0.95 0.04 268);
+  /* Brand */
+  --primary: #6C4CF1;
+  --primary-foreground: #FFFFFF;
+  --primary-soft: #8F6EFF40; /* 25% opacity */
 
-  --secondary: oklch(0.72 0.13 200);
-  --secondary-foreground: oklch(0.15 0.04 220);
+  --secondary: #F8F9FC;
+  --secondary-foreground: #111827;
 
   --destructive: oklch(0.58 0.22 27);
   --destructive-foreground: oklch(0.99 0.005 260);
