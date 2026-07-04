@@ -4,6 +4,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { CheckCircle2, Circle } from "lucide-react";
 import { listIntegrations } from "@/lib/api.functions";
 import { INTEGRATIONS, type IntegrationDefinition } from "@/lib/integrations-catalog";
+import { useOrg } from "@/lib/org-context";
 import { PageHeader } from "@/components/app/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -24,8 +25,13 @@ const CATEGORY_LABELS: Record<IntegrationDefinition["category"], string> = {
 };
 
 function IntegrationsPage() {
+  const { activeOrg } = useOrg();
   const fn = useServerFn(listIntegrations);
-  const { data } = useQuery({ queryKey: ["integrations"], queryFn: () => fn() });
+  const { data } = useQuery({ 
+    queryKey: ["integrations", activeOrg?.organization_id], 
+    queryFn: () => fn({ organization_id: activeOrg?.organization_id! }),
+    enabled: !!activeOrg
+  });
   const connected = new Map((data ?? []).map((r) => [r.provider, r]));
 
   const grouped = INTEGRATIONS.reduce<Record<string, IntegrationDefinition[]>>((acc, i) => {

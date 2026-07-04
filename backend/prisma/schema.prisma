@@ -7,8 +7,21 @@ generator client {
   provider = "prisma-client-js"
 }
 
+model User {
+  id         String   @id @default(uuid()) @map("_id") 
+  email      String   @unique
+  password   String
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+  Profile    Profile?
+
+  @@map("users")
+}
+
 model Profile {
-  id         String   @id @map("_id")
+  id         String   @id @default(uuid()) @map("_id") 
+  user_id    String   @unique 
+  user       User     @relation(fields: [user_id], references: [id])
   email      String
   full_name  String?
   avatar_url String?
@@ -20,7 +33,7 @@ model Profile {
 }
 
 model Organization {
-  id             String   @id @default(uuid()) @map("_id")
+  id             String   @id @default(uuid()) @map("_id") 
   name           String
   slug           String
   description    String?
@@ -31,7 +44,7 @@ model Organization {
   country        String?
   timezone       String?
   phone          String?
-  owner_id       String
+  owner_id       String   
   created_at     DateTime @default(now())
   updated_at     DateTime @updatedAt
 
@@ -39,15 +52,15 @@ model Organization {
 }
 
 model OrganizationMember {
-  id              String   @id @default(uuid()) @map("_id")
-  organization_id String
-  user_id         String
+  id              String   @id @default(uuid()) @map("_id") 
+  organization_id String   
+  user_id         String   
   role            String
   status          String
   phone           String?
   designation     String?
   department      String?
-  custom_role_id  String?
+  custom_role_id  String?  
   created_at      DateTime @default(now())
   updated_at      DateTime @updatedAt
 
@@ -55,8 +68,8 @@ model OrganizationMember {
 }
 
 model Workspace {
-  id              String   @id @default(uuid()) @map("_id")
-  organization_id String
+  id              String   @id @default(uuid()) @map("_id") 
+  organization_id String   
   name            String
   slug            String
   description     String?
@@ -67,25 +80,25 @@ model Workspace {
 }
 
 model Project {
-  id             String   @id @default(uuid()) @map("_id")
-  organization_id String
-  workspace_id   String?
-  name           String
-  slug           String
-  description    String?
-  status         String
-  repository_url String?
-  created_by     String
-  created_at     DateTime @default(now())
-  updated_at     DateTime @updatedAt
+  id              String   @id @default(uuid()) @map("_id") 
+  organization_id String   
+  workspace_id    String?  
+  name            String
+  slug            String
+  description     String?
+  status          String
+  repository_url  String?
+  created_by      String   
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
 
   @@map("projects")
 }
 
 model ProjectMember {
-  id         String   @id @default(uuid()) @map("_id")
-  project_id String
-  user_id    String
+  id         String   @id @default(uuid()) @map("_id") 
+  project_id String   
+  user_id    String   
   role       String
   created_at DateTime @default(now())
   updated_at DateTime @updatedAt
@@ -94,8 +107,8 @@ model ProjectMember {
 }
 
 model Invitation {
-  id              String   @id @default(uuid()) @map("_id")
-  organization_id String
+  id              String   @id @default(uuid()) @map("_id") 
+  organization_id String   
   email           String
   role            String
   status          String
@@ -107,8 +120,8 @@ model Invitation {
 }
 
 model Role {
-  id              String   @id @default(uuid()) @map("_id")
-  organization_id String?
+  id              String   @id @default(uuid()) @map("_id") 
+  organization_id String?  
   name            String
   description     String?
   is_system       Boolean  @default(false)
@@ -119,7 +132,7 @@ model Role {
 }
 
 model Permission {
-  id          String   @id @default(uuid()) @map("_id")
+  id          String   @id @default(uuid()) @map("_id") 
   key         String
   name        String?
   description String?
@@ -130,28 +143,28 @@ model Permission {
 }
 
 model RolePermission {
-  id            String   @id @default(uuid()) @map("_id")
-  role_id       String
-  permission_id String
+  id            String   @id @default(uuid()) @map("_id") 
+  role_id       String   
+  permission_id String   
   created_at    DateTime @default(now())
 
   @@map("role_permissions")
 }
 
 model UserRole {
-  id              String   @id @default(uuid()) @map("_id")
-  user_id         String
-  role_id         String
-  organization_id String
+  id              String   @id @default(uuid()) @map("_id") 
+  user_id         String   
+  role_id         String   
+  organization_id String   
   created_at      DateTime @default(now())
 
   @@map("user_roles")
 }
 
 model ChatConversation {
-  id              String   @id @default(uuid()) @map("_id")
-  project_id      String
-  organization_id String
+  id              String   @id @default(uuid()) @map("_id") 
+  project_id      String   
+  organization_id String   
   title           String
   is_pinned       Boolean  @default(false)
   created_at      DateTime @default(now())
@@ -161,10 +174,10 @@ model ChatConversation {
 }
 
 model ChatMessage {
-  id              String   @id @default(uuid()) @map("_id")
-  conversation_id String
-  project_id      String
-  user_id         String
+  id              String   @id @default(uuid()) @map("_id") 
+  conversation_id String   
+  project_id      String   
+  user_id         String   
   role            String
   content         String
   attachments     Json?
@@ -175,21 +188,21 @@ model ChatMessage {
 }
 
 model ChatUpload {
-  id              String   @id @default(uuid()) @map("_id")
-  conversation_id String
+  id              String   @id @default(uuid()) @map("_id") 
+  conversation_id String   
   file_name       String
   file_path       String
   file_size       Int
   mime_type       String
   created_at      DateTime @default(now())
-  user_id         String
+  user_id         String   
 
   @@map("chat_uploads")
 }
 
 model Document {
-  id         String   @id @default(uuid()) @map("_id")
-  project_id String
+  id         String   @id @default(uuid()) @map("_id") 
+  project_id String   
   title      String
   content    String?
   metadata   Json?
@@ -200,8 +213,8 @@ model Document {
 }
 
 model KnowledgeSource {
-  id         String   @id @default(uuid()) @map("_id")
-  project_id String
+  id         String   @id @default(uuid()) @map("_id") 
+  project_id String   
   name       String
   type       String
   config     Json?
@@ -212,8 +225,8 @@ model KnowledgeSource {
 }
 
 model Notification {
-  id         String   @id @default(uuid()) @map("_id")
-  user_id    String
+  id         String   @id @default(uuid()) @map("_id") 
+  user_id    String   
   title      String
   body       String
   is_read    Boolean  @default(false)
@@ -223,42 +236,42 @@ model Notification {
 }
 
 model AuditLog {
-  id              String   @id @default(uuid()) @map("_id")
+  id              String   @id @default(uuid()) @map("_id") 
   action          String
   created_at      DateTime @default(now())
   metadata        Json?
-  organization_id String?
-  user_id         String?
+  organization_id String?  
+  user_id         String?  
 
   @@map("audit_logs")
 }
 
 model ActivityLog {
-  id          String   @id @default(uuid()) @map("_id")
+  id          String   @id @default(uuid()) @map("_id") 
   action      String
   target_type String
   created_at  DateTime @default(now())
   metadata    Json?
-  user_id     String?
+  user_id     String?  
 
   @@map("activity_logs")
 }
 
 model ApiKey {
-  id              String   @id @default(uuid()) @map("_id")
+  id              String   @id @default(uuid()) @map("_id") 
   created_at      DateTime @default(now())
   key_hash        String
   name            String
-  organization_id String
+  organization_id String   
   scopes          Json?
-  user_id         String
+  user_id         String   
 
   @@map("api_keys")
 }
 
 model IntegrationConnection {
-  id                    String   @id @default(uuid()) @map("_id")
-  organization_id       String
+  id                    String   @id @default(uuid()) @map("_id") 
+  organization_id       String   
   provider              String
   status                String
   credentials_vault_key String?
