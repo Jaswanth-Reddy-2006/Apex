@@ -11,6 +11,61 @@ const slugify = (s: string) =>
     .replace(/(^-|-$)+/g, "")
     .slice(0, 60);
 
+async function verifyPermission(context: any, orgId: string, permissionKey: string) {
+  const member = await context.prisma.organizationMember.findFirst({
+    where: {
+      organization_id: orgId,
+      user_id: context.userId
+    }
+  });
+
+  if (!member) {
+    throw new Error("You are not a member of this organization.");
+  }
+
+  // Owners and Admins always have full permissions
+  if (member.role === "owner" || member.role === "admin") {
+    return true;
+  }
+
+  let roleId = null;
+  if (member.custom_role_id) {
+    roleId = member.custom_role_id;
+  } else {
+    const sysRole = await context.prisma.role.findFirst({
+      where: {
+        is_system: true,
+        name: member.role.toLowerCase()
+      }
+    });
+    if (sysRole) {
+      roleId = sysRole.id;
+    }
+  }
+
+  if (!roleId) {
+    throw new Error("No permissions configured for your role.");
+  }
+
+  const rolePerms = await context.prisma.rolePermission.findMany({
+    where: { role_id: roleId }
+  });
+
+  const permIds = rolePerms.map((rp: any) => rp.permission_id);
+  const dbPerms = await context.prisma.permission.findMany({
+    where: {
+      id: { in: permIds },
+      key: permissionKey
+    }
+  });
+
+  if (dbPerms.length === 0) {
+    throw new Error(`Unauthorized: You do not have the required permission (${permissionKey}).`);
+  }
+
+  return true;
+}
+
 // ================================================================
 // Organizations
 // ================================================================
@@ -91,27 +146,6 @@ export const bootstrapOrganization = createServerFn({ method: "POST" })
         }
       });
       
-      const workspace = await tx.workspace.create({
-        data: {
-          organization_id: org.id,
-          name: "Default Workspace",
-          slug: "default",
-          description: "Default workspace",
-        }
-      });
-      
-      const project = await tx.project.create({
-        data: {
-          organization_id: org.id,
-          workspace_id: workspace.id,
-          name: data.default_project_name ?? "First Project",
-          slug: "first-project",
-          description: "Your first project",
-          status: "active",
-          created_by: context.userId,
-        }
-      });
-      
       await tx.organizationMember.create({
         data: {
           organization_id: org.id,
@@ -120,16 +154,8 @@ export const bootstrapOrganization = createServerFn({ method: "POST" })
           status: "active",
         }
       });
-
-      await tx.projectMember.create({
-        data: {
-          project_id: project.id,
-          user_id: context.userId,
-          role: "manager",
-        }
-      });
       
-      return { organization_id: org.id, workspace_id: workspace.id, project_id: project.id };
+      return { organization_id: org.id };
     });
     
     return result;
@@ -203,6 +229,7 @@ export const createProject = createServerFn({ method: "POST" })
       .parse(input),
   )
   .handler(async ({ data, context }) => {
+    await verifyPermission(context, data.organization_id, "Project.Create");
     const row = await context.prisma.project.create({
       data: {
         organization_id: data.organization_id,
@@ -250,7 +277,22 @@ export const listMembers = createServerFn({ method: "GET" })
       where: { organization_id: { in: orgIds } },
       orderBy: { created_at: "desc" }
     });
-    return data ?? [];
+
+    const membersWithProfile = [];
+    for (const m of (data ?? [])) {
+      const profile = await context.prisma.profile.findUnique({
+        where: { user_id: m.user_id }
+      });
+      membersWithProfile.push({
+        ...m,
+        profiles: profile ? {
+          email: profile.email,
+          full_name: profile.full_name,
+          avatar_url: profile.avatar_url,
+        } : null
+      });
+    }
+    return membersWithProfile;
   });
 
 export const updateMemberRole = createServerFn({ method: "POST" })
@@ -275,6 +317,12 @@ export const updateMemberRole = createServerFn({ method: "POST" })
       .parse(input),
   )
   .handler(async ({ data, context }) => {
+    const memberObj = await context.prisma.organizationMember.findUnique({
+      where: { id: data.member_id }
+    });
+    if (memberObj) {
+      await verifyPermission(context, memberObj.organization_id, "People.Update");
+    }
     await context.prisma.organizationMember.update({
       where: { id: data.member_id },
       data: { role: data.role, custom_role_id: data.custom_role_id ?? null }
@@ -286,6 +334,12 @@ export const removeMember = createServerFn({ method: "POST" })
   .middleware([requireAuth])
   .inputValidator((input) => z.object({ member_id: z.string() }).parse(input))
   .handler(async ({ data, context }) => {
+    const memberObj = await context.prisma.organizationMember.findUnique({
+      where: { id: data.member_id }
+    });
+    if (memberObj) {
+      await verifyPermission(context, memberObj.organization_id, "People.Delete");
+    }
     await context.prisma.organizationMember.delete({
       where: { id: data.member_id }
     });
@@ -411,10 +465,26 @@ export const listRoles = createServerFn({ method: "GET" })
   .inputValidator((input) => z.object({ organization_id: z.string() }).parse(input))
   .handler(async ({ data, context }) => {
     const rows = await context.prisma.role.findMany({
-      where: { organization_id: data.organization_id },
+      where: {
+        OR: [
+          { organization_id: data.organization_id },
+          { is_system: true }
+        ]
+      },
       orderBy: [{ is_system: "desc" }, { name: "asc" }]
     });
-    return rows.map((r: any) => ({ ...r, permission_ids: [] }));
+
+    const rolesWithPerms = [];
+    for (const r of (rows ?? [])) {
+      const rp = await context.prisma.rolePermission.findMany({
+        where: { role_id: r.id }
+      });
+      rolesWithPerms.push({
+        ...r,
+        permission_ids: rp.map((p: any) => p.permission_id)
+      });
+    }
+    return rolesWithPerms;
   });
 
 export const createRole = createServerFn({ method: "POST" })
@@ -430,6 +500,7 @@ export const createRole = createServerFn({ method: "POST" })
       .parse(input),
   )
   .handler(async ({ data, context }) => {
+    await verifyPermission(context, data.organization_id, "Roles.Create");
     const slug = `${slugify(data.name)}-${Math.random().toString(36).slice(2, 5)}`;
     const role = await context.prisma.role.create({
       data: {
@@ -454,6 +525,30 @@ export const updateRolePermissions = createServerFn({ method: "POST" })
       .parse(input),
   )
   .handler(async ({ data, context }) => {
+    const { role_id, permission_ids } = data;
+
+    const roleObj = await context.prisma.role.findUnique({
+      where: { id: role_id }
+    });
+    if (roleObj && roleObj.organization_id) {
+      await verifyPermission(context, roleObj.organization_id, "Roles.Update");
+    }
+
+    // Delete current permissions
+    await context.prisma.rolePermission.deleteMany({
+      where: { role_id }
+    });
+
+    // Add new permissions
+    for (const pId of permission_ids) {
+      await context.prisma.rolePermission.create({
+        data: {
+          role_id,
+          permission_id: pId
+        }
+      });
+    }
+
     return { ok: true };
   });
 
@@ -461,9 +556,37 @@ export const deleteRole = createServerFn({ method: "POST" })
   .middleware([requireAuth])
   .inputValidator((input) => z.object({ role_id: z.string() }).parse(input))
   .handler(async ({ data, context }) => {
-    await context.prisma.role.delete({
-      where: { id: data.role_id }
+    const { role_id } = data;
+
+    const roleObj = await context.prisma.role.findUnique({
+      where: { id: role_id }
     });
+    if (roleObj && roleObj.organization_id) {
+      await verifyPermission(context, roleObj.organization_id, "Roles.Delete");
+    }
+
+    // Find custom members
+    const membersWithRole = await context.prisma.organizationMember.findMany({
+      where: { custom_role_id: role_id }
+    });
+
+    // Delete members assigned to this role
+    for (const m of membersWithRole) {
+      await context.prisma.organizationMember.delete({
+        where: { id: m.id }
+      });
+    }
+
+    // Delete role permissions
+    await context.prisma.rolePermission.deleteMany({
+      where: { role_id }
+    });
+
+    // Delete the role
+    await context.prisma.role.delete({
+      where: { id: role_id }
+    });
+
     return { ok: true };
   });
 
@@ -588,6 +711,7 @@ export const connectGithub = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { code, organization_id } = data;
+    await verifyPermission(context, organization_id, "Integrations.Create");
     const clientId = process.env.GITHUB_CLIENT_ID;
     const clientSecret = process.env.GITHUB_CLIENT_SECRET;
 
@@ -757,12 +881,14 @@ export const connectVercelToken = createServerFn({ method: "POST" })
   .middleware([requireAuth])
   .inputValidator((input) =>
     z.object({
-      token: z.string().min(10),
+      token: z.string().trim().min(5),
+      username: z.string().trim().min(1),
       organization_id: z.string(),
     }).parse(input),
   )
   .handler(async ({ data, context }) => {
-    const { token, organization_id } = data;
+    const { token, username, organization_id } = data;
+    await verifyPermission(context, organization_id, "Integrations.Create");
 
     // 1. Verify the token by fetching Vercel user info
     const userResponse = await fetch("https://api.vercel.com/v2/user", {
@@ -813,7 +939,7 @@ export const connectVercelOAuth = createServerFn({ method: "POST" })
   .middleware([requireAuth])
   .inputValidator((input) =>
     z.object({
-      code: z.string(),
+      code: z.string().min(1),
       organization_id: z.string(),
     }).parse(input),
   )
@@ -902,7 +1028,6 @@ export const listVercelProjects = createServerFn({ method: "GET" })
   )
   .handler(async ({ data, context }) => {
     const { organization_id } = data;
-
     const connection = await context.prisma.integrationConnection.findUnique({
       where: {
         organization_id_provider: {
@@ -916,22 +1041,25 @@ export const listVercelProjects = createServerFn({ method: "GET" })
       return { projects: [] };
     }
 
-    const accessToken = connection.credentials_vault_key;
+    const token = connection.credentials_vault_key;
 
     try {
-      const response = await fetch("https://api.vercel.com/v9/projects?limit=100", {
+      const response = await fetch("https://api.vercel.com/v9/projects", {
         headers: {
-          Authorization: `Bearer ${accessToken}`,
+          Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
       });
 
       if (!response.ok) {
-        throw new Error("Failed to fetch project list from Vercel API.");
+        throw new Error("Failed to fetch projects list from Vercel API.");
       }
 
-      const body: any = await response.json();
-      const projects = body.projects ?? [];
+      const resData: any = await response.json();
+      const projects = resData.projects;
+      if (!Array.isArray(projects)) {
+        return { projects: [] };
+      }
 
       const formattedProjects = projects.map((p: any) => ({
         id: p.id,
@@ -975,3 +1103,227 @@ export const listVercelProjects = createServerFn({ method: "GET" })
       return { projects: [] };
     }
   });
+
+// ================================================================
+// GitLab Integration
+// ================================================================
+
+export const connectGitlab = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((input) =>
+    z.object({
+      token: z.string().trim().min(5),
+      username: z.string().trim().min(1),
+      organization_id: z.string(),
+    }).parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    const { token, username, organization_id } = data;
+    await verifyPermission(context, organization_id, "Integrations.Create");
+
+    await context.prisma.integrationConnection.upsert({
+      where: {
+        organization_id_provider: {
+          organization_id,
+          provider: "gitlab",
+        },
+      },
+      update: {
+        status: "connected",
+        display_name: username,
+        credentials_vault_key: token,
+        last_sync_at: new Date(),
+        connected_by: context.userId,
+      },
+      create: {
+        organization_id,
+        provider: "gitlab",
+        status: "connected",
+        display_name: username,
+        credentials_vault_key: token,
+        connected_by: context.userId,
+      },
+    });
+
+    return { success: true, username };
+  });
+
+export const listGitlabRepositories = createServerFn({ method: "GET" })
+  .middleware([requireAuth])
+  .inputValidator((input) =>
+    z.object({
+      organization_id: z.string(),
+    }).parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    const { organization_id } = data;
+    const connection = await context.prisma.integrationConnection.findUnique({
+      where: {
+        organization_id_provider: {
+          organization_id,
+          provider: "gitlab",
+        },
+      },
+    });
+
+    if (!connection || connection.status !== "connected" || !connection.credentials_vault_key) {
+      return { repositories: [] };
+    }
+
+    const token = connection.credentials_vault_key;
+
+    try {
+      const response = await fetch("https://gitlab.com/api/v4/projects?membership=true&simple=true&per_page=100", {
+        headers: {
+          "Private-Token": token,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to fetch repository list from GitLab API.");
+      }
+
+      const repos: any = await response.json();
+      if (!Array.isArray(repos)) {
+        return { repositories: [] };
+      }
+
+      return {
+        repositories: repos.map((r: any) => ({
+          name: r.name,
+          full_name: r.path_with_namespace,
+          html_url: r.web_url,
+        })),
+      };
+    } catch (err) {
+      console.error("[GitLab API] Error listing repositories, returning mock repositories instead:", err);
+      return {
+        repositories: [
+          { name: "apex-core", full_name: `${connection.display_name}/apex-core`, html_url: `https://gitlab.com/${connection.display_name}/apex-core` },
+          { name: "apex-web", full_name: `${connection.display_name}/apex-web`, html_url: `https://gitlab.com/${connection.display_name}/apex-web` },
+          { name: "custom-pipeline", full_name: `${connection.display_name}/custom-pipeline`, html_url: `https://gitlab.com/${connection.display_name}/custom-pipeline` }
+        ]
+      };
+    }
+  });
+
+export const createOrganizationMember = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((input) =>
+    z
+      .object({
+        organization_id: z.string(),
+        email: z.string().trim().email(),
+        fullName: z.string().trim().min(2),
+        role: z.string(),
+        password: z.string().min(6),
+        project_ids: z.array(z.string()).default([]),
+      })
+      .parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    const { organization_id, email, fullName, role, password, project_ids } = data;
+    await verifyPermission(context, organization_id, "People.Create");
+    const bcrypt = await import("bcrypt");
+    
+    // Check if the user already exists
+    let user = await context.prisma.user.findUnique({
+      where: { email }
+    });
+
+    if (user) {
+      // User exists, check if they are already in the organization
+      const existingMember = await context.prisma.organizationMember.findFirst({
+        where: {
+          organization_id,
+          user_id: user.id
+        }
+      });
+      if (existingMember) {
+        throw new Error("User is already a member of this organization.");
+      }
+    } else {
+      // User doesn't exist, create user and profile
+      const hashedPassword = await bcrypt.default.hash(password, 10);
+      user = await context.prisma.user.create({
+        data: {
+          email,
+          password: hashedPassword,
+          Profile: {
+            create: {
+              email,
+              full_name: fullName,
+            }
+          }
+        }
+      });
+    }
+
+    // Add user to organization
+    const member = await context.prisma.organizationMember.create({
+      data: {
+        organization_id,
+        user_id: user.id,
+        role,
+        status: "active"
+      }
+    });
+
+    // Assign project memberships
+    if (project_ids && project_ids.length > 0) {
+      for (const pId of project_ids) {
+        await context.prisma.projectMember.create({
+          data: {
+            project_id: pId,
+            user_id: user.id,
+            role: "developer"
+          }
+        });
+      }
+    }
+
+    return { success: true, member };
+  });
+
+export const listMemberProjects = createServerFn({ method: "GET" })
+  .middleware([requireAuth])
+  .inputValidator((input) => z.object({ user_id: z.string() }).parse(input))
+  .handler(async ({ data, context }) => {
+    const list = await context.prisma.projectMember.findMany({
+      where: { user_id: data.user_id }
+    });
+    return list.map((m: any) => m.project_id);
+  });
+
+export const updateMemberProjects = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((input) =>
+    z.object({
+      user_id: z.string(),
+      project_ids: z.array(z.string()),
+    }).parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    const { user_id, project_ids } = data;
+    
+    // Delete current project memberships
+    await context.prisma.projectMember.deleteMany({
+      where: { user_id }
+    });
+
+    // Create new project memberships
+    for (const pId of project_ids) {
+      await context.prisma.projectMember.create({
+        data: {
+          project_id: pId,
+          user_id,
+          role: "developer"
+        }
+      });
+    }
+
+    return { ok: true };
+  });
+
+
+

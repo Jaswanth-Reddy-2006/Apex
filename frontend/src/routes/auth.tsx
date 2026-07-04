@@ -6,6 +6,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
 import { Loader2, ArrowLeft, ArrowRight } from "lucide-react";
 import { useServerFn } from "@tanstack/react-start";
+import { useQueryClient } from "@tanstack/react-query";
 import { bootstrapOrganization } from "@/lib/api.functions";
 import { createClientFn } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth-context";
@@ -123,10 +124,10 @@ function AuthPage() {
   const [tab, setTab] = useState<"login" | "register">(search.mode ?? "login");
 
   useEffect(() => {
-    if (user) {
+    if (user && tab !== "register") {
       navigate({ to: search.next ?? "/dashboard", replace: true });
     }
-  }, [user, navigate, search.next]);
+  }, [user, tab, navigate, search.next]);
 
   return (
     <div className="relative flex min-h-screen items-center justify-center bg-background px-4 py-12">
@@ -248,6 +249,7 @@ function RegisterWizard() {
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
 
+  const queryClient = useQueryClient();
   const form = useForm<z.infer<typeof registerSchema>>({
     resolver: zodResolver(registerSchema),
     mode: "onBlur",
@@ -306,9 +308,12 @@ function RegisterWizard() {
           timezone: values.timezone,
           phone: values.phone || "",
           logo_url: values.logoUrl || "",
-          default_project_name: "First Project",
+          default_project_name: "",
         },
       });
+
+      await queryClient.invalidateQueries({ queryKey: ["my-context"] });
+
       toast.success("Organization created. Welcome to APEX.");
       navigate({ to: "/dashboard", replace: true });
     } catch (e: any) {

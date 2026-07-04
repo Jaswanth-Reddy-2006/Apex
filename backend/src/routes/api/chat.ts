@@ -32,18 +32,20 @@ export const Route = createFileRoute("/api/chat")({
           return new Response("Missing HUGGINGFACE_API_KEY", { status: 500 });
         }
 
+        // Verify JWT and extract userId
         let userId: string;
         try {
           const decoded = jwt.verify(token, JWT_SECRET) as { userId: string };
           userId = decoded.userId;
+          if (!userId) throw new Error("Invalid token payload");
         } catch {
           return new Response("Unauthorized", { status: 401 });
         }
-        if (!userId) return new Response("Unauthorized", { status: 401 });
 
         // Verify conversation belongs to user + project
         const conv = await prisma.chatConversation.findUnique({
-          where: { id: conversationId }
+          where: { id: conversationId },
+          select: { id: true, project_id: true, organization_id: true, title: true },
         });
         if (!conv || conv.project_id !== projectId) {
           return new Response("Forbidden", { status: 403 });
@@ -56,7 +58,7 @@ export const Route = createFileRoute("/api/chat")({
             .map((p) => (p.type === "text" ? p.text : ""))
             .join("")
             .trim();
-          
+
           await prisma.chatMessage.create({
             data: {
               conversation_id: conversationId,
@@ -65,19 +67,19 @@ export const Route = createFileRoute("/api/chat")({
               role: "user",
               content: text,
               attachments: ((last as any).attachments || []) as any,
-            }
+            },
           });
 
           // Auto-title on first user message
           if (conv.title === "New chat" && text.length > 0) {
             await prisma.chatConversation.update({
               where: { id: conversationId },
-              data: { title: text.slice(0, 60), last_message_at: new Date() }
+              data: { title: text.slice(0, 60), last_message_at: new Date() },
             });
           } else {
             await prisma.chatConversation.update({
               where: { id: conversationId },
-              data: { last_message_at: new Date() }
+              data: { last_message_at: new Date() },
             });
           }
         }
@@ -125,7 +127,8 @@ export const Route = createFileRoute("/api/chat")({
 
         const model = huggingface("Qwen/Qwen2.5-72B-Instruct");
 
-        const systemPrompt = `You are APEX, an AI assistant embedded inside a specific project (id: ${projectId}). ` +
+        const systemPrompt =
+          `You are APEX, an AI assistant embedded inside a specific project (id: ${projectId}). ` +
           `You have per-project memory and MUST never reveal data from other projects. Be concise, technical, and helpful. ` +
           `Format responses in markdown.\n\n` +
           (contextData ? `Relevant context from connected integrations (GitHub, Vercel):\n${contextData}\n\n` : ` `);
@@ -143,11 +146,11 @@ export const Route = createFileRoute("/api/chat")({
                 role: "assistant",
                 content: text,
                 model: "Qwen/Qwen2.5-72B-Instruct",
-              }
+              },
             });
             await prisma.chatConversation.update({
               where: { id: conversationId },
-              data: { last_message_at: new Date() }
+              data: { last_message_at: new Date() },
             });
           },
         });
