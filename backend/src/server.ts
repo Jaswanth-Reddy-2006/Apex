@@ -81,7 +81,7 @@ app.all("/api/functions/:name", async (req, res) => {
     if (req.method === "GET" || req.method === "HEAD") {
       if (req.query._input) {
         try {
-          input = { data: JSON.parse(req.query._input as string) };
+          input = JSON.parse(req.query._input as string);
         } catch {
           input = { data: req.query };
         }

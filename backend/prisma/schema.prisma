@@ -1,5 +1,5 @@
 datasource db {
-  provider = "postgresql"
+  provider = "mongodb"
   url      = env("DATABASE_URL")
 }
 
@@ -8,7 +8,7 @@ generator client {
 }
 
 model Profile {
-  id         String   @id
+  id         String   @id @map("_id")
   email      String
   full_name  String?
   avatar_url String?
@@ -20,7 +20,7 @@ model Profile {
 }
 
 model Organization {
-  id             String   @id @default(uuid())
+  id             String   @id @default(uuid()) @map("_id")
   name           String
   slug           String
   description    String?
@@ -39,7 +39,7 @@ model Organization {
 }
 
 model OrganizationMember {
-  id              String   @id @default(uuid())
+  id              String   @id @default(uuid()) @map("_id")
   organization_id String
   user_id         String
   role            String
@@ -55,7 +55,7 @@ model OrganizationMember {
 }
 
 model Workspace {
-  id              String   @id @default(uuid())
+  id              String   @id @default(uuid()) @map("_id")
   organization_id String
   name            String
   slug            String
@@ -67,7 +67,7 @@ model Workspace {
 }
 
 model Project {
-  id             String   @id @default(uuid())
+  id             String   @id @default(uuid()) @map("_id")
   organization_id String
   workspace_id   String?
   name           String
@@ -83,7 +83,7 @@ model Project {
 }
 
 model ProjectMember {
-  id         String   @id @default(uuid())
+  id         String   @id @default(uuid()) @map("_id")
   project_id String
   user_id    String
   role       String
@@ -94,7 +94,7 @@ model ProjectMember {
 }
 
 model Invitation {
-  id              String   @id @default(uuid())
+  id              String   @id @default(uuid()) @map("_id")
   organization_id String
   email           String
   role            String
@@ -107,7 +107,7 @@ model Invitation {
 }
 
 model Role {
-  id              String   @id @default(uuid())
+  id              String   @id @default(uuid()) @map("_id")
   organization_id String?
   name            String
   description     String?
@@ -119,7 +119,7 @@ model Role {
 }
 
 model Permission {
-  id          String   @id @default(uuid())
+  id          String   @id @default(uuid()) @map("_id")
   key         String
   name        String?
   description String?
@@ -130,7 +130,7 @@ model Permission {
 }
 
 model RolePermission {
-  id            String   @id @default(uuid())
+  id            String   @id @default(uuid()) @map("_id")
   role_id       String
   permission_id String
   created_at    DateTime @default(now())
@@ -139,7 +139,7 @@ model RolePermission {
 }
 
 model UserRole {
-  id              String   @id @default(uuid())
+  id              String   @id @default(uuid()) @map("_id")
   user_id         String
   role_id         String
   organization_id String
@@ -149,7 +149,7 @@ model UserRole {
 }
 
 model ChatConversation {
-  id              String   @id @default(uuid())
+  id              String   @id @default(uuid()) @map("_id")
   project_id      String
   organization_id String
   title           String
@@ -161,7 +161,7 @@ model ChatConversation {
 }
 
 model ChatMessage {
-  id              String   @id @default(uuid())
+  id              String   @id @default(uuid()) @map("_id")
   conversation_id String
   project_id      String
   user_id         String
@@ -175,7 +175,7 @@ model ChatMessage {
 }
 
 model ChatUpload {
-  id              String   @id @default(uuid())
+  id              String   @id @default(uuid()) @map("_id")
   conversation_id String
   file_name       String
   file_path       String
@@ -188,7 +188,7 @@ model ChatUpload {
 }
 
 model Document {
-  id         String   @id @default(uuid())
+  id         String   @id @default(uuid()) @map("_id")
   project_id String
   title      String
   content    String?
@@ -200,7 +200,7 @@ model Document {
 }
 
 model KnowledgeSource {
-  id         String   @id @default(uuid())
+  id         String   @id @default(uuid()) @map("_id")
   project_id String
   name       String
   type       String
@@ -212,7 +212,7 @@ model KnowledgeSource {
 }
 
 model Notification {
-  id         String   @id @default(uuid())
+  id         String   @id @default(uuid()) @map("_id")
   user_id    String
   title      String
   body       String
@@ -223,7 +223,7 @@ model Notification {
 }
 
 model AuditLog {
-  id              String   @id @default(uuid())
+  id              String   @id @default(uuid()) @map("_id")
   action          String
   created_at      DateTime @default(now())
   metadata        Json?
@@ -234,7 +234,7 @@ model AuditLog {
 }
 
 model ActivityLog {
-  id          String   @id @default(uuid())
+  id          String   @id @default(uuid()) @map("_id")
   action      String
   target_type String
   created_at  DateTime @default(now())
@@ -245,7 +245,7 @@ model ActivityLog {
 }
 
 model ApiKey {
-  id              String   @id @default(uuid())
+  id              String   @id @default(uuid()) @map("_id")
   created_at      DateTime @default(now())
   key_hash        String
   name            String
@@ -257,7 +257,7 @@ model ApiKey {
 }
 
 model IntegrationConnection {
-  id                    String   @id @default(uuid())
+  id                    String   @id @default(uuid()) @map("_id")
   organization_id       String
   provider              String
   status                String
