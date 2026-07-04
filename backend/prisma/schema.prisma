@@ -279,13 +279,13 @@ model IntegrationConnection {
   display_name          String?
   status                String
   metadata              Json?
-  connected_by          String?
+  connected_by          String   @default("")
   last_sync_at          DateTime?
   credentials_vault_key String?
   created_at            DateTime  @default(now())
   updated_at            DateTime  @updatedAt
 
-  @@unique([organization_id, provider])
+  @@unique([organization_id, provider, connected_by])
   @@map("integration_connections")
 }
 

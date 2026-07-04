@@ -654,7 +654,10 @@ export const listIntegrations = createServerFn({ method: "GET" })
   .inputValidator((input) => z.object({ organization_id: z.string() }).parse(input))
   .handler(async ({ data, context }) => {
     const rows = await context.prisma.integrationConnection.findMany({
-      where: { organization_id: data.organization_id }
+      where: {
+        organization_id: data.organization_id,
+        connected_by: context.userId
+      }
     });
     return rows ?? [];
   });

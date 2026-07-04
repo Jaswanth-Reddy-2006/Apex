@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { CheckCircle2, Circle, Lock, Loader2 } from "lucide-react";
@@ -35,6 +35,11 @@ function IntegrationsPage() {
   const connectGitlabFn = useServerFn(connectGitlab);
   const connectNotionFn = useServerFn(connectNotion);
   const queryClient = useQueryClient();
+
+  useEffect(() => {
+    // Clear any stuck loading/redirect toasts when mounting the integrations list page
+    toast.dismiss();
+  }, []);
   
   const [gitlabOpen, setGitlabOpen] = useState(false);
   const [gitlabUser, setGitlabUser] = useState("");
@@ -101,8 +106,11 @@ function IntegrationsPage() {
       const redirectUri = encodeURIComponent(`${window.location.origin}/integrations-callback`);
       const githubOAuthUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&scope=repo,user&state=${activeOrg.organization_id}`;
       
-      toast.loading("Redirecting to GitHub for authorization...");
+      const toastId = toast.loading("Redirecting to GitHub for authorization...");
       window.location.href = githubOAuthUrl;
+      setTimeout(() => {
+        toast.dismiss(toastId);
+      }, 5000);
     } else if (item.id === "gitlab") {
       if (isConnected) {
         const conn = connected.get("gitlab");
@@ -136,8 +144,11 @@ function IntegrationsPage() {
       const redirectUri = encodeURIComponent(`${window.location.origin}/integrations-callback`);
       const notionOAuthUrl = `https://api.notion.com/v1/oauth/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=code&owner=user&state=notion:${activeOrg.organization_id}`;
       
-      toast.loading("Redirecting to Notion for authorization...");
+      const toastId = toast.loading("Redirecting to Notion for authorization...");
       window.location.href = notionOAuthUrl;
+      setTimeout(() => {
+        toast.dismiss(toastId);
+      }, 5000);
     } else {
       toast.info(`${item.name} integration will be enabled soon.`);
     }
