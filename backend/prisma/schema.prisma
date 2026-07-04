@@ -329,3 +329,33 @@ model AutonomousMetric {
 
   @@map("autonomous_metrics")
 }
+
+model AgentWallet {
+  id               String   @id @default(uuid()) @map("_id")
+  organization_id  String
+  project_id       String?
+  agent_name       String
+  wallet_address   String   @unique
+  daily_limit      Float    @default(100.0)
+  spent_today      Float    @default(0.0)
+  status           String   @default("active") // active, frozen
+  reputation_score Float    @default(95.0)
+  created_at       DateTime @default(now())
+
+  @@map("agent_wallets")
+}
+
+model AgentTransaction {
+  id              String   @id @default(uuid()) @map("_id")
+  organization_id String
+  wallet_id       String
+  recipient_agent String
+  amount          Float
+  purpose         String
+  risk_score      Float    @default(0.0)
+  status          String   @default("settled") // settled, blocked, pending_approval
+  trace           String?
+  created_at      DateTime @default(now())
+
+  @@map("agent_transactions")
+}
