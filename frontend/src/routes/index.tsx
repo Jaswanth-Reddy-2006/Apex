@@ -9,6 +9,7 @@ import { HowItWorksSection } from "@/components/marketing/how-it-works-section";
 import { SecuritySection } from "@/components/marketing/security-section";
 import { SocialProofSection } from "@/components/marketing/social-proof";
 import { CTASection } from "@/components/marketing/cta-section";
+import { DotMatrixName } from "@/components/marketing/dot-matrix-name";
 import { Footer } from "@/components/marketing/footer";
 import { IntegrationsSection } from "@/components/marketing/integrations-section";
 import { useEffect } from "react";
@@ -63,6 +64,7 @@ function Index() {
             <SecuritySection />
             <SocialProofSection />
             <CTASection />
+            <DotMatrixName />
           </main>
 
           <Footer />
