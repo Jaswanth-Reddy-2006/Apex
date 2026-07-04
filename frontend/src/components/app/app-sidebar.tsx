@@ -15,7 +15,6 @@ import {
   Shield,
   FileText,
   MessageSquare,
-  Triangle,
 } from "lucide-react";
 import {
   Sidebar,
@@ -49,7 +48,6 @@ const primary: Item[] = [
   { title: "Members", url: "/members", icon: Users, permission: "People.View" },
   { title: "Roles", url: "/roles", icon: Shield, adminOnly: true },
   { title: "Integrations", url: "/integrations", icon: Plug, permission: "Integrations.Connect" },
-  { title: "Vercel", url: "/vercel", icon: Triangle },
   { title: "Analytics", url: "/analytics", icon: BarChart3, permission: "Analytics.View" },
   { title: "Audit Logs", url: "/audit", icon: FileText, adminOnly: true },
   { title: "Notifications", url: "/notifications", icon: Bell },
