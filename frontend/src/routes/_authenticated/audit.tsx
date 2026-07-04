@@ -2,7 +2,8 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { FileText } from "lucide-react";
+import { FileText, Lock } from "lucide-react";
+import { useOrg } from "@/lib/org-context";
 import { listAuditLogs, listMyOrganizations } from "@/lib/api.functions";
 import { PageHeader, EmptyState } from "@/components/app/page-header";
 import { Card } from "@/components/ui/card";
@@ -29,11 +30,34 @@ export const Route = createFileRoute("/_authenticated/audit")({
 });
 
 function AuditPage() {
+  const { hasPermission, loading } = useOrg();
   const orgsFn = useServerFn(listMyOrganizations);
   const logsFn = useServerFn(listAuditLogs);
   const { data: orgs } = useQuery({ queryKey: ["organizations"], queryFn: () => orgsFn() });
   const [orgId, setOrgId] = useState<string>("");
   const activeOrg = orgId || orgs?.[0]?.id || "";
+
+  if (loading) {
+    return (
+      <div className="space-y-4">
+        <Skeleton className="h-10 w-64" />
+        <Skeleton className="h-32 w-full" />
+      </div>
+    );
+  }
+
+  if (!hasPermission("Audit.View")) {
+    return (
+      <div className="space-y-6">
+        <PageHeader title="Access Denied" />
+        <EmptyState
+          icon={Lock}
+          title="Permission Required"
+          description="You do not have the required permissions to view audit logs."
+        />
+      </div>
+    );
+  }
   const { data, isLoading } = useQuery({
     queryKey: ["audit", activeOrg],
     queryFn: () => logsFn({ data: { organization_id: activeOrg } }),

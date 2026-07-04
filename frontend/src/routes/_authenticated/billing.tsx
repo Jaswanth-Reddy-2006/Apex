@@ -1,9 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Check } from "lucide-react";
-import { PageHeader } from "@/components/app/page-header";
+import { Check, Lock } from "lucide-react";
+import { PageHeader, EmptyState } from "@/components/app/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useOrg } from "@/lib/org-context";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export const Route = createFileRoute("/_authenticated/billing")({
   component: BillingPage,
@@ -31,6 +33,30 @@ const plans = [
 ];
 
 function BillingPage() {
+  const { hasPermission, loading } = useOrg();
+
+  if (loading) {
+    return (
+      <div className="space-y-4">
+        <Skeleton className="h-10 w-64" />
+        <Skeleton className="h-32 w-full" />
+      </div>
+    );
+  }
+
+  if (!hasPermission("Billing.View")) {
+    return (
+      <div className="space-y-6">
+        <PageHeader title="Access Denied" />
+        <EmptyState
+          icon={Lock}
+          title="Permission Required"
+          description="You do not have the required permissions to view financial/billing details."
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-8">
       <PageHeader

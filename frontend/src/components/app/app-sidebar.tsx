@@ -42,14 +42,12 @@ type Item = {
 const primary: Item[] = [
   { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
   { title: "AI Chat", url: "/chat", icon: MessageSquare, permission: "Chat.Access" },
-  { title: "Organization", url: "/organization", icon: Building2, adminOnly: true },
-  { title: "Workspaces", url: "/workspace", icon: Boxes },
   { title: "Projects", url: "/projects", icon: FolderKanban, permission: "Project.View" },
   { title: "Members", url: "/members", icon: Users, permission: "People.View" },
-  { title: "Roles", url: "/roles", icon: Shield, adminOnly: true },
+  { title: "Roles", url: "/roles", icon: Shield, permission: "Roles.View" },
   { title: "Integrations", url: "/integrations", icon: Plug, permission: "Integrations.Connect" },
   { title: "Analytics", url: "/analytics", icon: BarChart3, permission: "Analytics.View" },
-  { title: "Audit Logs", url: "/audit", icon: FileText, adminOnly: true },
+  { title: "Audit Logs", url: "/audit", icon: FileText, permission: "Audit.View" },
   { title: "Notifications", url: "/notifications", icon: Bell },
 ];
 

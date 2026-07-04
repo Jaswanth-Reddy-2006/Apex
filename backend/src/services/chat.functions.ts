@@ -151,16 +151,125 @@ export const getMyContext = createServerFn({ method: "GET" })
       });
     }
 
+    function getStaticPermissions(role: string): string[] {
+      const r = role.toLowerCase();
+      if (r === "owner" || r === "admin") {
+        return [
+          "Chat.Access",
+          "Project.View",
+          "People.View",
+          "Integrations.Connect",
+          "Analytics.View",
+          "Billing.View",
+          "Roles.View",
+          "Roles.Manage",
+          "Settings.View",
+          "Audit.View",
+        ];
+      } else if (r === "manager" || r === "project-manager") {
+        return [
+          "Chat.Access",
+          "Project.View",
+          "People.View",
+          "Integrations.Connect",
+          "Analytics.View",
+          "Roles.View",
+          "Roles.Manage",
+        ];
+      } else if (r === "finance") {
+        return [
+          "Chat.Access",
+          "Project.View",
+          "Analytics.View",
+          "Billing.View",
+        ];
+      } else if (["developer", "designer", "qa", "tester", "devops"].includes(r)) {
+        return [
+          "Chat.Access",
+          "Project.View",
+          "Analytics.View",
+        ];
+      }
+      return ["Chat.Access", "Project.View"];
+    }
+
     const permByOrg: Record<string, string[]> = {};
     for (const o of orgs) {
-       permByOrg[o.organization_id] = [
-         "Chat.Access",
-         "Project.View",
-         "People.View",
-         "Integrations.Connect",
-         "Analytics.View",
-         "Billing.View"
-       ];
+       let perms: string[] = ["Chat.Access", "Project.View"];
+       
+       const m = memberships.find(member => member.organization_id === o.organization_id);
+       
+       let roleId = null;
+       if (m?.custom_role_id) {
+         roleId = m.custom_role_id;
+       } else if (m?.role) {
+         const sysRole = await context.prisma.role.findFirst({
+           where: {
+             is_system: true,
+             name: m.role.toLowerCase()
+           }
+         });
+         if (sysRole) {
+           roleId = sysRole.id;
+         }
+       }
+
+       if (roleId) {
+         const rolePerms = await context.prisma.rolePermission.findMany({
+           where: { role_id: roleId }
+         });
+         const permIds = rolePerms.map((rp: any) => rp.permission_id);
+         const dbPerms = await context.prisma.permission.findMany({
+           where: { id: { in: permIds } }
+         });
+         const keys = dbPerms.map((p: any) => p.key);
+         if (keys.length > 0) {
+           perms = keys;
+         } else {
+           perms = getStaticPermissions(m?.role || "viewer");
+         }
+       } else {
+         perms = getStaticPermissions(m?.role || "viewer");
+       }
+
+       // Map granular database CRUD permission keys to UI views
+       const uiKeys: string[] = [];
+       if (perms.includes("Chat.Read") || perms.includes("Chat.Create") || perms.includes("Chat.Access")) uiKeys.push("Chat.Access");
+       if (perms.includes("Project.Read") || perms.includes("Project.View")) uiKeys.push("Project.View");
+       if (perms.includes("Project.Create")) uiKeys.push("Project.Create");
+       if (perms.includes("People.Read") || perms.includes("People.View")) uiKeys.push("People.View");
+       if (perms.includes("People.Create") || perms.includes("People.Update") || perms.includes("People.Invite") || perms.includes("People.Manage")) uiKeys.push("People.Invite", "People.Manage");
+       if (perms.includes("Roles.Read") || perms.includes("Roles.View")) uiKeys.push("Roles.View");
+       if (perms.includes("Roles.Create") || perms.includes("Roles.Update") || perms.includes("Roles.Delete") || perms.includes("Roles.Manage")) uiKeys.push("Roles.Manage");
+       if (perms.includes("Integrations.Create") || perms.includes("Integrations.Read") || perms.includes("Integrations.Connect")) uiKeys.push("Integrations.Connect");
+       if (perms.includes("Analytics.Read") || perms.includes("Analytics.View")) uiKeys.push("Analytics.View");
+       if (perms.includes("Billing.Read") || perms.includes("Billing.View")) uiKeys.push("Billing.View");
+       if (perms.includes("Audit.Read") || perms.includes("Audit.View")) uiKeys.push("Audit.View");
+
+       perms = Array.from(new Set([...perms, ...uiKeys]));
+
+       if (o.base_role.toLowerCase() === "owner" || o.base_role.toLowerCase() === "admin") {
+         const allDbPerms = await context.prisma.permission.findMany();
+         perms = Array.from(new Set([
+           ...perms, 
+           ...allDbPerms.map((p: any) => p.key), 
+           "Chat.Access",
+           "Project.View",
+           "Project.Create",
+           "People.View",
+           "People.Invite",
+           "People.Manage",
+           "Roles.View",
+           "Roles.Manage",
+           "Integrations.Connect",
+           "Analytics.View",
+           "Billing.View",
+           "Audit.View",
+           "Settings.View"
+         ]));
+       }
+
+       permByOrg[o.organization_id] = perms;
     }
 
     return { user_id: context.userId, organizations: orgs, permissions_by_org: permByOrg };
