@@ -745,64 +745,33 @@ export const listGithubRepositories = createServerFn({ method: "GET" })
 // Vercel Integration
 // ================================================================
 
-export const connectVercel = createServerFn({ method: "POST" })
+export const connectVercelToken = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input) =>
     z.object({
-      code: z.string(),
+      token: z.string().min(10),
       organization_id: z.string(),
     }).parse(input),
   )
   .handler(async ({ data, context }) => {
-    const { code, organization_id } = data;
-    const clientId = process.env.VERCEL_CLIENT_ID;
-    const clientSecret = process.env.VERCEL_CLIENT_SECRET;
-    const redirectUri = process.env.VERCEL_REDIRECT_URI;
+    const { token, organization_id } = data;
 
-    if (!clientId || !clientSecret || !redirectUri) {
-      throw new Error("Vercel OAuth credentials not configured on the backend server.");
-    }
-
-    // 1. Exchange code for access token
-    const tokenResponse = await fetch("https://api.vercel.com/v2/oauth/access_token", {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        client_id: clientId,
-        client_secret: clientSecret,
-        code,
-        redirect_uri: redirectUri,
-      }).toString(),
-    });
-
-    if (!tokenResponse.ok) {
-      const errorText = await tokenResponse.text();
-      throw new Error(`Failed to exchange Vercel authorization code: ${errorText}`);
-    }
-
-    const tokenData: any = await tokenResponse.json();
-    if (tokenData.error) {
-      throw new Error(`Vercel OAuth error: ${tokenData.error_description || tokenData.error}`);
-    }
-
-    const accessToken = tokenData.access_token;
-
-    // 2. Fetch authenticated Vercel user details
+    // 1. Verify the token by fetching Vercel user info
     const userResponse = await fetch("https://api.vercel.com/v2/user", {
       headers: {
-        Authorization: `Bearer ${accessToken}`,
+        Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
       },
     });
 
     if (!userResponse.ok) {
-      throw new Error("Failed to fetch authenticated Vercel user details.");
+      throw new Error("Invalid Vercel token. Please check the token and try again.");
     }
 
     const userData: any = await userResponse.json();
     const vercelUsername = userData.user?.username || userData.user?.email || "vercel-user";
 
-    // 3. Upsert integration connection in MongoDB
+    // 2. Upsert integration connection in MongoDB
     await prisma.integrationConnection.upsert({
       where: {
         organization_id_provider: {
@@ -813,7 +782,7 @@ export const connectVercel = createServerFn({ method: "POST" })
       update: {
         status: "connected",
         display_name: vercelUsername,
-        credentials_vault_key: accessToken,
+        credentials_vault_key: token,
         last_sync_at: new Date(),
         connected_by: context.userId,
       },
@@ -822,7 +791,7 @@ export const connectVercel = createServerFn({ method: "POST" })
         provider: "vercel",
         status: "connected",
         display_name: vercelUsername,
-        credentials_vault_key: accessToken,
+        credentials_vault_key: token,
         connected_by: context.userId,
       },
     });
