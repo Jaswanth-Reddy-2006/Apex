@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import { getUserPermissions } from "../lib/permissions.js";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 export const listConversations = createServerFn({ method: "GET" })
@@ -199,15 +200,10 @@ export const getMyContext = createServerFn({ method: "GET" })
       };
     });
 
-    // Fetch permissions for each org via RPC
+    // Fetch permissions for each org via Prisma
     const permByOrg: Record<string, string[]> = {};
     for (const o of orgs) {
-      const { data: perms } = await context.supabase.rpc("my_org_permissions", {
-        _org_id: o.organization_id,
-      });
-      permByOrg[o.organization_id] = ((perms ?? []) as Array<{ permission_key: string }>).map(
-        (p) => p.permission_key,
-      );
+      permByOrg[o.organization_id] = await getUserPermissions(context.userId, o.organization_id);
     }
 
     return { user_id: context.userId, organizations: orgs, permissions_by_org: permByOrg };

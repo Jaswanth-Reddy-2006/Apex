@@ -43,22 +43,22 @@ type Item = {
 const primary: Item[] = [
   { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
   { title: "AI Chat", url: "/chat", icon: MessageSquare, permission: "Chat.Access" },
-  { title: "Organization", url: "/organization", icon: Building2, adminOnly: true },
-  { title: "Workspaces", url: "/workspace", icon: Boxes },
+  { title: "Organization", url: "/organization", icon: Building2, permission: "Org.Manage" },
+  { title: "Workspaces", url: "/workspace", icon: Boxes, permission: "Workspace.View" },
   { title: "Projects", url: "/projects", icon: FolderKanban, permission: "Project.View" },
   { title: "Members", url: "/members", icon: Users, permission: "People.View" },
-  { title: "Roles", url: "/roles", icon: Shield, adminOnly: true },
-  { title: "Integrations", url: "/integrations", icon: Plug, permission: "Integrations.Connect" },
-  { title: "Vercel", url: "/vercel", icon: Triangle },
+  { title: "Roles", url: "/roles", icon: Shield, permission: "Roles.View" },
+  { title: "Integrations", url: "/integrations", icon: Plug, permission: "Integrations.View" },
+  { title: "Vercel", url: "/vercel", icon: Triangle, permission: "Integrations.View" },
   { title: "Analytics", url: "/analytics", icon: BarChart3, permission: "Analytics.View" },
-  { title: "Audit Logs", url: "/audit", icon: FileText, adminOnly: true },
-  { title: "Notifications", url: "/notifications", icon: Bell },
+  { title: "Audit Logs", url: "/audit", icon: FileText, permission: "AuditLogs.View" },
+  { title: "Notifications", url: "/notifications", icon: Bell, permission: "Notifications.View" },
 ];
 
 const secondary: Item[] = [
   { title: "Profile", url: "/profile", icon: User },
   { title: "Billing", url: "/billing", icon: CreditCard, permission: "Billing.View" },
-  { title: "Settings", url: "/settings", icon: Settings, adminOnly: true },
+  { title: "Settings", url: "/settings", icon: Settings, permission: "Org.Manage" },
   { title: "Support", url: "/support", icon: LifeBuoy },
 ];
 
@@ -69,7 +69,6 @@ export function AppSidebar() {
 
   const gate = (i: Item) => {
     if (!activeOrg) return i.url === "/dashboard" || i.url === "/profile" || i.url === "/support";
-    if (i.adminOnly) return isAdmin;
     if (i.permission) return hasPermission(i.permission);
     return true;
   };

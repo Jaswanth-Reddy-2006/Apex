@@ -4,6 +4,7 @@ import { createClientFn } from "./api-client";
 export const listMyOrganizations = createClientFn("listMyOrganizations", "GET") as typeof backendApi.listMyOrganizations;
 export const createOrganization = createClientFn("createOrganization", "POST") as typeof backendApi.createOrganization;
 export const bootstrapOrganization = createClientFn("bootstrapOrganization", "POST") as typeof backendApi.bootstrapOrganization;
+export const joinDemoOrganization = createClientFn("joinDemoOrganization", "POST") as typeof backendApi.joinDemoOrganization;
 export const getDashboardStats = createClientFn("getDashboardStats", "GET") as typeof backendApi.getDashboardStats;
 export const listRecentActivity = createClientFn("listRecentActivity", "GET") as typeof backendApi.listRecentActivity;
 export const listProjects = createClientFn("listProjects", "GET") as typeof backendApi.listProjects;

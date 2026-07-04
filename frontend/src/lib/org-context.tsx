@@ -84,7 +84,7 @@ export function OrgProvider({ children }: { children: ReactNode }) {
       activeOrg,
       setActiveOrgId,
       permissions,
-      hasPermission: (key: string) => isAdmin || permissions.includes(key),
+      hasPermission: (key: string) => permissions.includes(key),
       role,
       isOwner,
       isAdmin,

@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { prisma } from "../lib/prisma.js";
+import { checkPermission, getUserPermissions } from "../lib/permissions.js";
 
 /**
  * APEX server-side RPCs. All calls are typed, Zod-validated, and RLS-scoped
@@ -97,6 +98,70 @@ export const bootstrapOrganization = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     const rec = Array.isArray(row) ? row[0] : row;
     return rec as { organization_id: string; workspace_id: string; project_id: string };
+  });
+
+export const joinDemoOrganization = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) =>
+    z
+      .object({
+        role: z.enum([
+          "Project Manager",
+          "Team Lead",
+          "Developer",
+          "Designer",
+          "QA Engineer",
+          "HR",
+          "Finance",
+          "Sales",
+          "Guest",
+        ]),
+      })
+      .parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    const orgSlug = `sandbox-${Math.random().toString(36).slice(2, 8)}`;
+    const org = await prisma.organization.create({
+      data: {
+        name: `Demo Organization`,
+        slug: orgSlug,
+        owner_id: context.userId,
+      },
+    });
+
+    await prisma.organizationMember.create({
+      data: {
+        organization_id: org.id,
+        user_id: context.userId,
+        role: data.role,
+        status: "active",
+      },
+    });
+
+    const workspace = await prisma.workspace.create({
+      data: {
+        organization_id: org.id,
+        name: "Demo Workspace",
+        slug: `${orgSlug}-demo-workspace`,
+      },
+    });
+
+    const project = await prisma.project.create({
+      data: {
+        organization_id: org.id,
+        workspace_id: workspace.id,
+        name: "Demo Project",
+        slug: `${orgSlug}-demo-project`,
+        status: "active",
+        created_by: context.userId,
+      },
+    });
+
+    return {
+      organization_id: org.id,
+      workspace_id: workspace.id,
+      project_id: project.id,
+    };
   });
 
 // ================================================================
@@ -374,6 +439,13 @@ export const listPermissions = createServerFn({ method: "GET" })
     return data ?? [];
   });
 
+export const getMyPermissions = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) => z.object({ organization_id: z.string().uuid() }).parse(input))
+  .handler(async ({ data, context }) => {
+    return await getUserPermissions(context.userId, data.organization_id);
+  });
+
 export const listRoles = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input) => z.object({ organization_id: z.string().uuid() }).parse(input))
@@ -411,6 +483,7 @@ export const createRole = createServerFn({ method: "POST" })
       .parse(input),
   )
   .handler(async ({ data, context }) => {
+    await checkPermission(context.userId, data.organization_id, 'Roles.Manage');
     const slug = `${slugify(data.name)}-${Math.random().toString(36).slice(2, 5)}`;
     const { data: role, error } = await context.supabase
       .from("roles")
@@ -439,11 +512,13 @@ export const updateRolePermissions = createServerFn({ method: "POST" })
     z
       .object({
         role_id: z.string().uuid(),
+        organization_id: z.string().uuid(),
         permission_ids: z.array(z.string().uuid()),
       })
       .parse(input),
   )
   .handler(async ({ data, context }) => {
+    await checkPermission(context.userId, data.organization_id, 'Roles.Manage');
     const { error: dErr } = await context.supabase
       .from("role_permissions")
       .delete()
@@ -462,8 +537,9 @@ export const updateRolePermissions = createServerFn({ method: "POST" })
 
 export const deleteRole = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input) => z.object({ role_id: z.string().uuid() }).parse(input))
+  .inputValidator((input) => z.object({ role_id: z.string().uuid(), organization_id: z.string().uuid() }).parse(input))
   .handler(async ({ data, context }) => {
+    await checkPermission(context.userId, data.organization_id, 'Roles.Manage');
     const { error } = await context.supabase
       .from("roles")
       .delete()
