@@ -3,7 +3,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { CheckCircle2, Circle, Lock, Loader2 } from "lucide-react";
-import { listIntegrations, connectGitlab } from "@/lib/api.functions";
+import { listIntegrations, connectGitlab, connectNotion } from "@/lib/api.functions";
 import { INTEGRATIONS, type IntegrationDefinition } from "@/lib/integrations-catalog";
 import { useOrg } from "@/lib/org-context";
 import { PageHeader, EmptyState } from "@/components/app/page-header";
@@ -33,12 +33,18 @@ function IntegrationsPage() {
   const { activeOrg, hasPermission, loading } = useOrg();
   const fn = useServerFn(listIntegrations);
   const connectGitlabFn = useServerFn(connectGitlab);
+  const connectNotionFn = useServerFn(connectNotion);
   const queryClient = useQueryClient();
   
   const [gitlabOpen, setGitlabOpen] = useState(false);
   const [gitlabUser, setGitlabUser] = useState("");
   const [gitlabToken, setGitlabToken] = useState("");
   const [connectingGitlab, setConnectingGitlab] = useState(false);
+
+  const [notionOpen, setNotionOpen] = useState(false);
+  const [notionToken, setNotionToken] = useState("");
+  const [notionWorkspace, setNotionWorkspace] = useState("");
+  const [connectingNotion, setConnectingNotion] = useState(false);
 
   const { data, isLoading } = useQuery({ 
     queryKey: ["integrations", activeOrg?.organization_id], 
@@ -110,6 +116,19 @@ function IntegrationsPage() {
       setGitlabUser("");
       setGitlabToken("");
       setGitlabOpen(true);
+    } else if (item.id === "notion") {
+      if (isConnected) {
+        const conn = connected.get("notion");
+        toast.success(`Already connected to Notion Workspace: ${conn?.display_name || "Authorized Workspace"}`);
+        return;
+      }
+      if (!activeOrg?.organization_id) {
+        toast.error("No active organization found.");
+        return;
+      }
+      setNotionToken("");
+      setNotionWorkspace("");
+      setNotionOpen(true);
     } else {
       toast.info(`${item.name} integration will be enabled soon.`);
     }
@@ -137,6 +156,31 @@ function IntegrationsPage() {
       toast.error(err.message || "Failed to connect GitLab");
     } finally {
       setConnectingGitlab(false);
+    }
+  };
+
+  const handleNotionConnect = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!notionToken || !notionWorkspace) {
+      toast.error("Please enter both Notion Token and Workspace Name.");
+      return;
+    }
+    setConnectingNotion(true);
+    try {
+      await connectNotionFn({
+        data: {
+          token: notionToken,
+          workspaceName: notionWorkspace,
+          organization_id: activeOrg?.organization_id!,
+        },
+      });
+      toast.success("Notion connected successfully!");
+      queryClient.invalidateQueries({ queryKey: ["integrations", activeOrg?.organization_id] });
+      setNotionOpen(false);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to connect Notion");
+    } finally {
+      setConnectingNotion(false);
     }
   };
 
@@ -233,6 +277,46 @@ function IntegrationsPage() {
               </Button>
               <Button type="submit" disabled={connectingGitlab}>
                 {connectingGitlab ? <Loader2 className="h-4 w-4 animate-spin" /> : "Connect Account"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={notionOpen} onOpenChange={setNotionOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Connect Notion Workspace</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleNotionConnect} className="space-y-4">
+            <div>
+              <Label htmlFor="notion-workspace">Workspace Name</Label>
+              <Input
+                id="notion-workspace"
+                value={notionWorkspace}
+                onChange={(e) => setNotionWorkspace(e.target.value)}
+                placeholder="e.g. APEX Docs"
+              />
+            </div>
+            <div>
+              <Label htmlFor="notion-token">Internal Integration Token</Label>
+              <Input
+                id="notion-token"
+                type="password"
+                value={notionToken}
+                onChange={(e) => setNotionToken(e.target.value)}
+                placeholder="secret_..."
+              />
+              <p className="mt-1 text-xs text-muted-foreground">
+                Generate a secret token in your <a href="https://www.notion.so/my-integrations" target="_blank" rel="noreferrer" className="text-primary hover:underline">Notion Integrations Dashboard</a>.
+              </p>
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setNotionOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={connectingNotion}>
+                {connectingNotion ? <Loader2 className="h-4 w-4 animate-spin" /> : "Connect Workspace"}
               </Button>
             </DialogFooter>
           </form>

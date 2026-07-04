@@ -36,3 +36,5 @@ export const listGitlabRepositories = createClientFn("listGitlabRepositories", "
 export const createOrganizationMember = createClientFn("createOrganizationMember", "POST") as typeof backendApi.createOrganizationMember;
 export const listMemberProjects = createClientFn("listMemberProjects", "GET") as typeof backendApi.listMemberProjects;
 export const updateMemberProjects = createClientFn("updateMemberProjects", "POST") as typeof backendApi.updateMemberProjects;
+export const connectNotion = createClientFn("connectNotion", "POST") as typeof backendApi.connectNotion;
+export const listNotionPages = createClientFn("listNotionPages", "GET") as typeof backendApi.listNotionPages;
