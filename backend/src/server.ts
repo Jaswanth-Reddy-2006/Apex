@@ -149,7 +149,11 @@ app.post("/api/chat", async (req, res) => {
     }
   } catch (err: any) {
     console.error("Error in /api/chat:", err);
-    res.status(500).json({ error: err.message || "Internal Server Error" });
+    if (!res.headersSent) {
+      res.status(500).json({ error: err.message || "Internal Server Error" });
+    } else {
+      res.end();
+    }
   }
 });
 
