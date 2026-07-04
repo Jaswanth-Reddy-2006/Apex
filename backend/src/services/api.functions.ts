@@ -1543,30 +1543,84 @@ export const listNotionPages = createServerFn({ method: "GET" })
       const res: any = await response.json();
       const results = res.results || [];
 
-      return {
-        pages: results.map((p: any) => {
-          let title = "Untitled Page";
-          if (p.properties && p.properties.title && Array.isArray(p.properties.title.title)) {
-            title = p.properties.title.title.map((t: any) => t.plain_text).join("") || title;
-          } else if (p.properties && p.properties.Name && Array.isArray(p.properties.Name.title)) {
-            title = p.properties.Name.title.map((t: any) => t.plain_text).join("") || title;
+      const formattedPages = results.map((p: any) => {
+        let title = "Untitled Page";
+        if (p.properties && p.properties.title && Array.isArray(p.properties.title.title)) {
+          title = p.properties.title.title.map((t: any) => t.plain_text).join("") || title;
+        } else if (p.properties && p.properties.Name && Array.isArray(p.properties.Name.title)) {
+          title = p.properties.Name.title.map((t: any) => t.plain_text).join("") || title;
+        }
+        return {
+          id: p.id,
+          title,
+          url: p.url,
+          last_edited_time: p.last_edited_time,
+        };
+      });
+
+      // Background sync RAG data for Notion
+      Promise.resolve().then(async () => {
+        try {
+          await context.prisma.integrationDataNode.deleteMany({
+            where: { organization_id, provider: "notion" }
+          });
+          
+          for (const page of formattedPages) {
+            const content = `Notion Page: ${page.title}. URL: ${page.url}. Last edited: ${page.last_edited_time}`;
+            const embedding = await generateEmbedding(content);
+            await context.prisma.integrationDataNode.create({
+              data: {
+                organization_id,
+                project_id: "global",
+                provider: "notion",
+                content,
+                embedding,
+              }
+            });
           }
-          return {
-            id: p.id,
-            title,
-            url: p.url,
-            last_edited_time: p.last_edited_time,
-          };
-        }),
+        } catch (e) {
+          console.error("RAG Sync Error (Notion):", e);
+        }
+      });
+
+      return {
+        pages: formattedPages,
       };
     } catch (err) {
       console.error("[Notion API] Error searching pages, returning mockup fallback pages:", err);
+      const mockPages = [
+        { id: "notion-1", title: "APEX Developer Onboarding Wiki", url: "https://notion.so/apex-dev-onboarding", last_edited_time: new Date().toISOString() },
+        { id: "notion-2", title: "Product Roadmap & Sprint Goals", url: "https://notion.so/apex-roadmap-goals", last_edited_time: new Date().toISOString() },
+        { id: "notion-3", title: "Release Sprint Notes v1.2", url: "https://notion.so/apex-release-notes-v1-2", last_edited_time: new Date().toISOString() },
+      ];
+
+      // Background sync RAG data for Notion Mock
+      Promise.resolve().then(async () => {
+        try {
+          await context.prisma.integrationDataNode.deleteMany({
+            where: { organization_id, provider: "notion" }
+          });
+          
+          for (const page of mockPages) {
+            const content = `Notion Page: ${page.title}. URL: ${page.url}. Last edited: ${page.last_edited_time}`;
+            const embedding = await generateEmbedding(content);
+            await context.prisma.integrationDataNode.create({
+              data: {
+                organization_id,
+                project_id: "global",
+                provider: "notion",
+                content,
+                embedding,
+              }
+            });
+          }
+        } catch (e) {
+          console.error("RAG Sync Error (Notion Mock):", e);
+        }
+      });
+
       return {
-        pages: [
-          { id: "notion-1", title: "APEX Developer Onboarding Wiki", url: "https://notion.so/apex-dev-onboarding", last_edited_time: new Date().toISOString() },
-          { id: "notion-2", title: "Product Roadmap & Sprint Goals", url: "https://notion.so/apex-roadmap-goals", last_edited_time: new Date().toISOString() },
-          { id: "notion-3", title: "Release Sprint Notes v1.2", url: "https://notion.so/apex-release-notes-v1-2", last_edited_time: new Date().toISOString() },
-        ],
+        pages: mockPages,
       };
     }
   });
@@ -1826,12 +1880,39 @@ export const listGoogleDriveFiles = createServerFn({ method: "GET" })
       };
     } catch (err) {
       console.error("[Google Drive API] Error listing files, returning mock files instead:", err);
+      const mockFiles = [
+        { id: "gdrive-1", name: "APEX Product Architecture Specs.pdf", mimeType: "application/pdf", url: "https://drive.google.com/file/d/apex-architecture", modifiedTime: new Date().toISOString() },
+        { id: "gdrive-2", name: "Q3 Project Cost Analysis & Budget.xlsx", mimeType: "application/vnd.google-apps.spreadsheet", url: "https://drive.google.com/file/d/q3-budget", modifiedTime: new Date().toISOString() },
+        { id: "gdrive-3", name: "Apex Logo Branding Kit Assets.zip", mimeType: "application/zip", url: "https://drive.google.com/file/d/logo-branding", modifiedTime: new Date().toISOString() },
+      ];
+
+      // Background sync RAG data for Google Drive Mock
+      Promise.resolve().then(async () => {
+        try {
+          await context.prisma.integrationDataNode.deleteMany({
+            where: { organization_id, provider: "gdrive" }
+          });
+          
+          for (const file of mockFiles) {
+            const content = `Google Drive File: ${file.name}. Type: ${file.mimeType}. URL: ${file.url}.`;
+            const embedding = await generateEmbedding(content);
+            await context.prisma.integrationDataNode.create({
+              data: {
+                organization_id,
+                project_id: "global",
+                provider: "gdrive",
+                content,
+                embedding,
+              }
+            });
+          }
+        } catch (e) {
+          console.error("RAG Sync Error (Google Drive Mock):", e);
+        }
+      });
+
       return {
-        files: [
-          { id: "gdrive-1", name: "APEX Product Architecture Specs.pdf", mimeType: "application/pdf", url: "https://drive.google.com/file/d/apex-architecture", modifiedTime: new Date().toISOString() },
-          { id: "gdrive-2", name: "Q3 Project Cost Analysis & Budget.xlsx", mimeType: "application/vnd.google-apps.spreadsheet", url: "https://drive.google.com/file/d/q3-budget", modifiedTime: new Date().toISOString() },
-          { id: "gdrive-3", name: "Apex Logo Branding Kit Assets.zip", mimeType: "application/zip", url: "https://drive.google.com/file/d/logo-branding", modifiedTime: new Date().toISOString() },
-        ],
+        files: mockFiles,
       };
     }
   });

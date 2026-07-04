@@ -95,33 +95,48 @@ export const Route = createFileRoute("/api/chat")({
             
             const embedding = await generateEmbedding(userText);
             
-            // Raw MongoDB Vector Search
-            const rawResult: any = await prisma.$runCommandRaw({
-              aggregate: "integration_data_nodes",
-              pipeline: [
-                {
-                  $vectorSearch: {
-                    index: "vector_index", // Requires an Atlas Vector Search index named 'vector_index'
-                    path: "embedding",
-                    queryVector: embedding,
-                    numCandidates: 100,
-                    limit: 5,
-                    filter: { organization_id: conv.organization_id }
+            let docs: any[] = [];
+            try {
+              // Raw MongoDB Vector Search
+              const rawResult: any = await prisma.$runCommandRaw({
+                aggregate: "integration_data_nodes",
+                pipeline: [
+                  {
+                    $vectorSearch: {
+                      index: "vector_index", // Requires an Atlas Vector Search index named 'vector_index'
+                      path: "embedding",
+                      queryVector: embedding,
+                      numCandidates: 100,
+                      limit: 5,
+                      filter: { organization_id: conv.organization_id }
+                    }
+                  },
+                  {
+                    $project: { content: 1, score: { $meta: "searchScore" } }
                   }
+                ],
+                cursor: {}
+              });
+              docs = rawResult?.cursor?.firstBatch ?? [];
+            } catch (e: any) {
+              console.warn("[RAG] Vector index search failed, falling back to text search:", e.message || e);
+              const searchWords = userText.split(/\s+/).filter(w => w.length > 2).slice(0, 5);
+              docs = await prisma.integrationDataNode.findMany({
+                where: {
+                  organization_id: conv.organization_id,
+                  OR: searchWords.length > 0 ? searchWords.map(term => ({
+                    content: { contains: term, mode: "insensitive" }
+                  })) : undefined
                 },
-                {
-                  $project: { content: 1, score: { $meta: "searchScore" } }
-                }
-              ],
-              cursor: {}
-            });
+                take: 5
+              });
+            }
 
-            const docs = rawResult?.cursor?.firstBatch ?? [];
             if (docs.length > 0) {
               contextData = docs.map((d: any) => d.content).join("\n\n");
             }
           } catch (e) {
-            console.error("[RAG] Vector search failed:", e);
+            console.error("[RAG] Retrieval query builder failed:", e);
           }
         }
 
