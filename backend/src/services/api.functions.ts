@@ -850,6 +850,9 @@ export const listGithubRepositories = createServerFn({ method: "GET" })
             where: { organization_id, provider: "github" }
           });
           
+          // Get top 30 recently updated repositories to fetch commits for
+          const topRepos = formattedRepos.slice(0, 30);
+          
           for (const repo of formattedRepos) {
             const content = `GitHub Repository: ${repo.full_name}. URL: ${repo.html_url}`;
             const embedding = await generateEmbedding(content);
@@ -862,6 +865,46 @@ export const listGithubRepositories = createServerFn({ method: "GET" })
                 embedding,
               }
             });
+
+            // If it's one of the top 10 repos, fetch latest 3 commits
+            if (topRepos.some(r => r.full_name === repo.full_name)) {
+              try {
+                const commitsResponse = await fetch(`https://api.github.com/repos/${repo.full_name}/commits?per_page=3`, {
+                  headers: {
+                    Authorization: `Bearer ${accessToken}`,
+                    Accept: "application/json",
+                    "User-Agent": "APEX-App",
+                  },
+                });
+
+                if (commitsResponse.ok) {
+                  const commits: any = await commitsResponse.json();
+                  if (Array.isArray(commits)) {
+                    for (const c of commits) {
+                      const sha = c.sha;
+                      const authorName = c.commit?.author?.name || "Unknown Author";
+                      const authorEmail = c.commit?.author?.email || "";
+                      const commitMessage = c.commit?.message || "";
+                      const commitDate = c.commit?.author?.date || "";
+                      
+                      const commitContent = `Last GitHub Commit in repository ${repo.full_name} by ${authorName} (${authorEmail}) on ${commitDate}. Message: ${commitMessage}. SHA: ${sha}.`;
+                      const commitEmbedding = await generateEmbedding(commitContent);
+                      await context.prisma.integrationDataNode.create({
+                        data: {
+                          organization_id,
+                          project_id: "global",
+                          provider: "github",
+                          content: commitContent,
+                          embedding: commitEmbedding,
+                        }
+                      });
+                    }
+                  }
+                }
+              } catch (e) {
+                console.error(`Failed to fetch commits for ${repo.full_name}:`, e);
+              }
+            }
           }
         } catch (e) {
           console.error("RAG Sync Error (GitHub):", e);
