@@ -146,7 +146,8 @@ export const Route = createFileRoute("/api/chat")({
           `You are APEX, an AI assistant embedded inside a specific project (id: ${projectId}). ` +
           `You have per-project memory and MUST never reveal data from other projects. Be concise, technical, and helpful. ` +
           `Format responses in markdown.\n\n` +
-          (contextData ? `Relevant context from connected integrations (GitHub, Vercel):\n${contextData}\n\n` : ` `);
+          (contextData ? `Relevant context from connected integrations (GitHub, Vercel, Scraped Websites):\n${contextData}\n\n` +
+                         `IMPORTANT: Prioritize answering using the provided scraped website data or integration context if it matches the user's query. When answering based on scraped websites, always cite the website name and URL (e.g., "[Title](URL)") to verify the source.\n\n` : ` `);
 
         const result = streamText({
           model,
