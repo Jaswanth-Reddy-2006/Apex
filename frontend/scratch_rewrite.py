@@ -1,92 +1,48 @@
-import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
-import { z } from "zod";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { toast } from "sonner";
-import { Loader2, ArrowLeft, ArrowRight } from "lucide-react";
+import re
 
-import { createClientFn } from "@/lib/api-client";
-import { bootstrapOrganization, joinDemoOrganization } from "@/lib/api.functions";
-import { useAuth } from "@/lib/auth-context";
-import { RoleSelectionUI, type DemoRole } from "@/components/auth/RoleSelectionUI";
-import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { ApexLogo } from "@/components/app/apex-logo";
-import { ThemeToggle } from "@/components/app/theme-toggle";
-import { PasswordInput } from "@/components/app/password-input";
+def rewrite_auth():
+    path = r"c:\Users\jeeva\APexx\Apex\frontend\src\routes\auth.tsx"
+    with open(path, "r", encoding="utf-8") as f:
+        content = f.read()
 
-const apiLogin = createClientFn("login", "POST");
-const apiSignup = createClientFn("signup", "POST");
+    # Add new imports
+    imports = """import { bootstrapOrganization, joinDemoOrganization } from "@/lib/api.functions";
+import { RoleSelectionUI, type DemoRole } from "@/components/auth/RoleSelectionUI";"""
+    content = content.replace('import { bootstrapOrganization } from "@/lib/api.functions";', imports)
 
-type SearchParams = { mode?: "login" | "register"; next?: string };
-
-export const Route = createFileRoute("/auth")({
-  validateSearch: (s: Record<string, unknown>): SearchParams => ({
-    mode: s.mode === "register" ? "register" : "login",
-    next: typeof s.next === "string" ? s.next : undefined,
-  }),
-  component: AuthPage,
-});
-
-const INDUSTRIES = [
-  "Software / SaaS",
-  "E-commerce",
-  "Finance",
-  "Healthcare",
-  "Education",
-  "Manufacturing",
-  "Media",
-  "Consulting",
-  "Government",
-  "Other",
-];
-const EMPLOYEE_BUCKETS = ["1-10", "11-50", "51-200", "201-1000", "1000+"];
-const COUNTRIES = [
-  "United States",
-  "United Kingdom",
-  "Canada",
-  "Germany",
-  "France",
-  "Netherlands",
-  "India",
-  "Singapore",
-  "Australia",
-  "Japan",
-  "Brazil",
-  "Other",
-];
-const TIMEZONES = [
-  "UTC",
-  "America/Los_Angeles",
-  "America/New_York",
-  "Europe/London",
-  "Europe/Berlin",
-  "Asia/Dubai",
-  "Asia/Kolkata",
-  "Asia/Singapore",
-  "Asia/Tokyo",
-  "Australia/Sydney",
-];
-
-const loginSchema = z.object({
-  email: z.string().email("Invalid email address"),
-  password: z.string().min(6, "Password must be at least 6 characters").max(128),
-  remember: z.boolean().optional(),
-});
-
-const registerSchema = z
+    # Replace registerSchema
+    old_schema = """const registerSchema = z
+  .object({
+    // Owner
+    fullName: z.string().trim().min(2, "Required").max(100),
+    email: z.string().trim().email("Invalid email").max(255),
+    password: z.string().min(8, "Min 8 characters").max(128),
+    confirmPassword: z.string().min(8).max(128),
+    phone: z.string().trim().max(40).optional().or(z.literal("")),
+    // Organization
+    orgName: z.string().trim().min(2, "Required").max(80),
+    orgDomain: z.string().trim().max(120).optional().or(z.literal("")),
+    logoUrl: z
+      .string()
+      .trim()
+      .url("Must be a valid URL")
+      .max(500)
+      .optional()
+      .or(z.literal("")),
+    industry: z.string().min(1, "Required"),
+    employeeCount: z.string().min(1, "Required"),
+    country: z.string().min(1, "Required"),
+    timezone: z.string().min(1, "Required"),
+    acceptTerms: z.literal(true, {
+      errorMap: () => ({ message: "You must accept the terms" }),
+    }),
+  })
+  .refine((v) => v.password === v.confirmPassword, {
+    path: ["confirmPassword"],
+    message: "Passwords do not match",
+  });"""
+    
+    new_schema = """const registerSchema = z
   .object({
     // Owner
     fullName: z.string().trim().min(2, "Required").max(100),
@@ -115,143 +71,24 @@ const registerSchema = z
   .refine((v) => v.password === v.confirmPassword, {
     path: ["confirmPassword"],
     message: "Passwords do not match",
-  });
+  });"""
+    
+    content = content.replace(old_schema, new_schema)
 
-function AuthPage() {
-  const search = Route.useSearch();
+    # Rewrite RegisterWizard
+    wizard_start = "function RegisterWizard() {"
+    wizard_end = "function StepIndicator({"
+    
+    wizard_block = content[content.find(wizard_start) : content.find(wizard_end)]
+    
+    new_wizard = """function RegisterWizard() {
   const navigate = useNavigate();
-  const { user, setToken } = useAuth();
-  const [tab, setTab] = useState<"login" | "register">(search.mode ?? "login");
-
-  useEffect(() => {
-    if (user && tab !== "register") {
-      navigate({ to: search.next ?? "/dashboard", replace: true });
-    }
-  }, [user, tab, navigate, search.next]);
-
-  return (
-    <div className="relative flex min-h-screen items-center justify-center bg-background px-4 py-12">
-      <div className="absolute inset-0 gradient-hero pointer-events-none" aria-hidden />
-      <div className="absolute right-4 top-4 z-10">
-        <ThemeToggle />
-      </div>
-
-      <div className="relative z-10 w-full max-w-2xl">
-        <div className="mb-6 flex justify-center">
-          <ApexLogo />
-        </div>
-        <div className="rounded-2xl border border-border bg-card p-8 shadow-elegant">
-          <div className="mb-6 text-center">
-            <h1 className="text-xl font-semibold tracking-tight">Welcome to APEX</h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              One AI Operating System For Modern Companies
-            </p>
-          </div>
-
-          <Tabs value={tab} onValueChange={(v) => setTab(v as "login" | "register")}>
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="login">Sign in</TabsTrigger>
-              <TabsTrigger value="register">Create organization</TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="login" className="mt-6">
-              <LoginForm />
-            </TabsContent>
-            <TabsContent value="register" className="mt-6">
-              <RegisterWizard />
-            </TabsContent>
-          </Tabs>
-        </div>
-
-        <p className="mt-6 text-center text-xs text-muted-foreground">
-          <Link to="/" className="hover:text-foreground">
-            ← Back to home
-          </Link>
-        </p>
-      </div>
-    </div>
-  );
-}
-
-function LoginForm() {
-  const navigate = useNavigate();
-  const search = Route.useSearch();
-  const { setToken } = useAuth();
-  const form = useForm<z.infer<typeof loginSchema>>({
-    resolver: zodResolver(loginSchema),
-    defaultValues: { email: "", password: "", remember: true },
-  });
-  const [loading, setLoading] = useState(false);
-
-  const onSubmit = form.handleSubmit(async (values) => {
-    setLoading(true);
-    try {
-      const res = await apiLogin({ email: values.email, password: values.password });
-      setToken(res.token, res.user);
-      toast.success("Signed in");
-      navigate({ to: search.next ?? "/dashboard", replace: true });
-    } catch (error: any) {
-      toast.error(error.message || "Failed to sign in");
-    } finally {
-      setLoading(false);
-    }
-  });
-
-  return (
-    <form onSubmit={onSubmit} className="space-y-4">
-      <div>
-        <Label htmlFor="login-email">Email</Label>
-        <Input id="login-email" type="email" autoComplete="email" {...form.register("email")} />
-        {form.formState.errors.email && (
-          <p className="mt-1 text-xs text-destructive">{form.formState.errors.email.message}</p>
-        )}
-      </div>
-      <div>
-        <div className="flex items-center justify-between">
-          <Label htmlFor="login-password">Password</Label>
-          <Link to="/forgot-password" className="text-xs text-primary hover:underline">
-            Forgot?
-          </Link>
-        </div>
-        <PasswordInput
-          id="login-password"
-          autoComplete="current-password"
-          {...form.register("password")}
-        />
-        {form.formState.errors.password && (
-          <p className="mt-1 text-xs text-destructive">
-            {form.formState.errors.password.message}
-          </p>
-        )}
-      </div>
-      <label className="flex items-center gap-2 text-sm text-muted-foreground">
-        <Checkbox
-          checked={form.watch("remember") ?? true}
-          onCheckedChange={(v) => form.setValue("remember", Boolean(v))}
-        />
-        Remember me on this device
-      </label>
-      <Button
-        type="submit"
-        disabled={loading}
-        className="w-full gradient-primary text-primary-foreground shadow-elegant"
-      >
-        {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Sign in"}
-      </Button>
-    </form>
-  );
-}
-
-function RegisterWizard() {
-  const navigate = useNavigate();
-  const bootstrap = bootstrapOrganization;
-  const joinDemo = joinDemoOrganization;
-  const { setToken } = useAuth();
+  const bootstrap = useServerFn(bootstrapOrganization);
+  const joinDemo = useServerFn(joinDemoOrganization);
   const [step, setStep] = useState(0);
   const [path, setPath] = useState<"create" | "demo" | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const queryClient = useQueryClient();
   const form = useForm<z.infer<typeof registerSchema>>({
     resolver: zodResolver(registerSchema),
     mode: "onBlur",
@@ -301,14 +138,38 @@ function RegisterWizard() {
   const submit = form.handleSubmit(async (values) => {
     if (!path) return;
     setLoading(true);
-    try {
-      // 1. Sign up the owner
-      const res = await apiSignup({
+    
+    // 1. Sign up the owner
+    const { data: signUp, error: signErr } = await supabase.auth.signUp({
+      email: values.email,
+      password: values.password,
+      options: {
+        emailRedirectTo: `${window.location.origin}/dashboard`,
+        data: { full_name: values.fullName, phone: values.phone },
+      },
+    });
+    
+    if (signErr) {
+      setLoading(false);
+      toast.error(signErr.message);
+      return;
+    }
+    
+    // 2. Ensure session
+    if (!signUp.session) {
+      const { error: sErr } = await supabase.auth.signInWithPassword({
         email: values.email,
         password: values.password,
-        fullName: values.fullName,
       });
-      setToken((res as any).token, (res as any).user);
+      if (sErr) {
+        setLoading(false);
+        toast.error(sErr.message);
+        return;
+      }
+    }
+    
+    // 3. Process path
+    try {
       if (path === "create") {
         await bootstrap({
           data: {
@@ -337,7 +198,6 @@ function RegisterWizard() {
       navigate({ to: "/dashboard", replace: true });
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Initialization failed");
-
     } finally {
       setLoading(false);
     }
@@ -523,97 +383,12 @@ function RegisterWizard() {
     </form>
   );
 }
-function StepIndicator({
-  step,
-  total,
-  labels,
-}: {
-  step: number;
-  total: number;
-  labels: string[];
-}) {
-  return (
-    <div className="flex items-center gap-2">
-      {Array.from({ length: total }).map((_, i) => (
-        <div key={i} className="flex flex-1 items-center gap-2">
-          <div
-            className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-semibold ${
-              i <= step ? "gradient-primary text-primary-foreground" : "bg-muted text-muted-foreground"
-            }`}
-          >
-            {i + 1}
-          </div>
-          <span
-            className={`text-xs ${
-              i === step ? "font-medium text-foreground" : "text-muted-foreground"
-            }`}
-          >
-            {labels[i]}
-          </span>
-          {i < total - 1 && <div className="h-px flex-1 bg-border" />}
-        </div>
-      ))}
-    </div>
-  );
-}
+"""
+    
+    content = content.replace(wizard_block, new_wizard)
 
-type FieldProps = React.InputHTMLAttributes<HTMLInputElement> & {
-  label: string;
-  id: string;
-  error?: string;
-};
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(content)
 
-const Field = ({ label, id, error, ...rest }: FieldProps) => (
-  <div>
-    <Label htmlFor={id}>{label}</Label>
-    <Input id={id} {...rest} />
-    {error && <p className="mt-1 text-xs text-destructive">{error}</p>}
-  </div>
-);
-
-type PasswordFieldProps = Omit<React.InputHTMLAttributes<HTMLInputElement>, "type"> & {
-  label: string;
-  id: string;
-  error?: string;
-};
-
-const PasswordField = ({ label, id, error, ...rest }: PasswordFieldProps) => (
-  <div>
-    <Label htmlFor={id}>{label}</Label>
-    <PasswordInput id={id} {...rest} />
-    {error && <p className="mt-1 text-xs text-destructive">{error}</p>}
-  </div>
-);
-
-function SelectField({
-  label,
-  value,
-  onChange,
-  options,
-  error,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  options: string[];
-  error?: string;
-}) {
-  return (
-    <div>
-      <Label>{label}</Label>
-      <Select value={value} onValueChange={onChange}>
-        <SelectTrigger>
-          <SelectValue placeholder={`Select ${label.toLowerCase()}`} />
-        </SelectTrigger>
-        <SelectContent>
-          {options.map((o) => (
-            <SelectItem key={o} value={o}>
-              {o}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-      {error && <p className="mt-1 text-xs text-destructive">{error}</p>}
-    </div>
-  );
-}
+if __name__ == "__main__":
+    rewrite_auth()

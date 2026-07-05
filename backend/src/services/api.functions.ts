@@ -1,8 +1,15 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireAuth } from "../lib/auth-middleware.js";
+import { prisma } from "../lib/prisma.js";
+import { checkPermission, getUserPermissions } from "../lib/permissions.js";
 import { generateEmbedding } from "./rag.js";
 import { scrapeAndChunk } from "./website.js";
+
+/**
+ * APEX server-side RPCs. All calls are typed, Zod-validated, and RLS-scoped
+ * via the authenticated client from `requireAuth`.
+ */
 
 const slugify = (s: string) =>
   s
@@ -160,6 +167,70 @@ export const bootstrapOrganization = createServerFn({ method: "POST" })
     });
     
     return result;
+  });
+
+export const joinDemoOrganization = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((input) =>
+    z
+      .object({
+        role: z.enum([
+          "Project Manager",
+          "Team Lead",
+          "Developer",
+          "Designer",
+          "QA Engineer",
+          "HR",
+          "Finance",
+          "Sales",
+          "Guest",
+        ]),
+      })
+      .parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    const orgSlug = `sandbox-${Math.random().toString(36).slice(2, 8)}`;
+    const org = await prisma.organization.create({
+      data: {
+        name: `Demo Organization`,
+        slug: orgSlug,
+        owner_id: context.userId,
+      },
+    });
+
+    await prisma.organizationMember.create({
+      data: {
+        organization_id: org.id,
+        user_id: context.userId,
+        role: data.role,
+        status: "active",
+      },
+    });
+
+    const workspace = await prisma.workspace.create({
+      data: {
+        organization_id: org.id,
+        name: "Demo Workspace",
+        slug: `${orgSlug}-demo-workspace`,
+      },
+    });
+
+    const project = await prisma.project.create({
+      data: {
+        organization_id: org.id,
+        workspace_id: workspace.id,
+        name: "Demo Project",
+        slug: `${orgSlug}-demo-project`,
+        status: "active",
+        created_by: context.userId,
+      },
+    });
+
+    return {
+      organization_id: org.id,
+      workspace_id: workspace.id,
+      project_id: project.id,
+    };
   });
 
 // ================================================================
@@ -461,6 +532,13 @@ export const listPermissions = createServerFn({ method: "GET" })
     return data ?? [];
   });
 
+export const getMyPermissions = createServerFn({ method: "GET" })
+  .middleware([requireAuth])
+  .inputValidator((input) => z.object({ organization_id: z.string().uuid() }).parse(input))
+  .handler(async ({ data, context }) => {
+    return await getUserPermissions(context.userId, data.organization_id);
+  });
+
 export const listRoles = createServerFn({ method: "GET" })
   .middleware([requireAuth])
   .inputValidator((input) => z.object({ organization_id: z.string() }).parse(input))
@@ -501,7 +579,7 @@ export const createRole = createServerFn({ method: "POST" })
       .parse(input),
   )
   .handler(async ({ data, context }) => {
-    await verifyPermission(context, data.organization_id, "Roles.Create");
+    await checkPermission(context.userId, data.organization_id, 'Roles.Manage');
     const slug = `${slugify(data.name)}-${Math.random().toString(36).slice(2, 5)}`;
     const role = await context.prisma.role.create({
       data: {
@@ -520,8 +598,9 @@ export const updateRolePermissions = createServerFn({ method: "POST" })
   .inputValidator((input) =>
     z
       .object({
-        role_id: z.string(),
-        permission_ids: z.array(z.string()),
+        role_id: z.string().uuid(),
+        organization_id: z.string().uuid(),
+        permission_ids: z.array(z.string().uuid()),
       })
       .parse(input),
   )
@@ -532,30 +611,25 @@ export const updateRolePermissions = createServerFn({ method: "POST" })
       where: { id: role_id }
     });
     if (roleObj && roleObj.organization_id) {
-      await verifyPermission(context, roleObj.organization_id, "Roles.Update");
+      await checkPermission(context.userId, roleObj.organization_id, 'Roles.Manage');
     }
 
     // Delete current permissions
     await context.prisma.rolePermission.deleteMany({
-      where: { role_id }
+      where: { role_id: data.role_id }
     });
-
-    // Add new permissions
-    for (const pId of permission_ids) {
-      await context.prisma.rolePermission.create({
-        data: {
-          role_id,
-          permission_id: pId
-        }
+    
+    if (data.permission_ids.length > 0) {
+      await context.prisma.rolePermission.createMany({
+        data: data.permission_ids.map(pid => ({ role_id: data.role_id, permission_id: pid }))
       });
     }
-
     return { ok: true };
   });
 
 export const deleteRole = createServerFn({ method: "POST" })
   .middleware([requireAuth])
-  .inputValidator((input) => z.object({ role_id: z.string() }).parse(input))
+  .inputValidator((input) => z.object({ role_id: z.string().uuid(), organization_id: z.string().uuid() }).parse(input))
   .handler(async ({ data, context }) => {
     const { role_id } = data;
 
@@ -563,7 +637,7 @@ export const deleteRole = createServerFn({ method: "POST" })
       where: { id: role_id }
     });
     if (roleObj && roleObj.organization_id) {
-      await verifyPermission(context, roleObj.organization_id, "Roles.Delete");
+      await checkPermission(context.userId, roleObj.organization_id, 'Roles.Manage');
     }
 
     // Find custom members

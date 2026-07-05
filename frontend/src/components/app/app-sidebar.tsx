@@ -16,6 +16,7 @@ import {
   FileText,
   MessageSquare,
   Cpu,
+  Triangle,
 } from "lucide-react";
 import {
   Sidebar,
@@ -45,10 +46,13 @@ const primary: Item[] = [
   { title: "Autonomous OS", url: "/autonomous-os", icon: Cpu },
   { title: "Agent Payments", url: "/agent-payments", icon: CreditCard },
   { title: "AI Chat", url: "/chat", icon: MessageSquare, permission: "Chat.Access" },
+  { title: "Organization", url: "/organization", icon: Building2, permission: "Org.Manage" },
+  { title: "Workspaces", url: "/workspace", icon: Boxes, permission: "Workspace.View" },
   { title: "Projects", url: "/projects", icon: FolderKanban, permission: "Project.View" },
   { title: "Members", url: "/members", icon: Users, permission: "People.View" },
   { title: "Roles", url: "/roles", icon: Shield, permission: "Roles.View" },
   { title: "Integrations", url: "/integrations", icon: Plug, permission: "Integrations.Connect" },
+  { title: "Vercel", url: "/vercel", icon: Triangle, permission: "Integrations.Connect" },
   { title: "Analytics", url: "/analytics", icon: BarChart3, permission: "Analytics.View" },
   { title: "Audit Logs", url: "/audit", icon: FileText, permission: "Audit.View" },
   { title: "Notifications", url: "/notifications", icon: Bell },
@@ -57,18 +61,17 @@ const primary: Item[] = [
 const secondary: Item[] = [
   { title: "Profile", url: "/profile", icon: User },
   { title: "Billing", url: "/billing", icon: CreditCard, permission: "Billing.View" },
-  { title: "Settings", url: "/settings", icon: Settings, adminOnly: true },
+  { title: "Settings", url: "/settings", icon: Settings, permission: "Org.Manage" },
   { title: "Support", url: "/support", icon: LifeBuoy },
 ];
 
 export function AppSidebar() {
   const pathname = useRouterState({ select: (r) => r.location.pathname });
-  const { hasPermission, isAdmin, activeOrg } = useOrg();
+  const { hasPermission, activeOrg } = useOrg();
   const isActive = (url: string) => pathname === url || pathname.startsWith(url + "/");
 
   const gate = (i: Item) => {
     if (!activeOrg) return i.url === "/dashboard" || i.url === "/profile" || i.url === "/support";
-    if (i.adminOnly) return isAdmin;
     if (i.permission) return hasPermission(i.permission);
     return true;
   };
