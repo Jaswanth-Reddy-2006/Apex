@@ -1544,21 +1544,48 @@ export const listNotionPages = createServerFn({ method: "GET" })
       const res: any = await response.json();
       const results = res.results || [];
 
-      return {
-        pages: results.map((p: any) => {
-          let title = "Untitled Page";
-          if (p.properties && p.properties.title && Array.isArray(p.properties.title.title)) {
-            title = p.properties.title.title.map((t: any) => t.plain_text).join("") || title;
-          } else if (p.properties && p.properties.Name && Array.isArray(p.properties.Name.title)) {
-            title = p.properties.Name.title.map((t: any) => t.plain_text).join("") || title;
+      const formattedPages = results.map((p: any) => {
+        let title = "Untitled Page";
+        if (p.properties && p.properties.title && Array.isArray(p.properties.title.title)) {
+          title = p.properties.title.title.map((t: any) => t.plain_text).join("") || title;
+        } else if (p.properties && p.properties.Name && Array.isArray(p.properties.Name.title)) {
+          title = p.properties.Name.title.map((t: any) => t.plain_text).join("") || title;
+        }
+        return {
+          id: p.id,
+          title,
+          url: p.url,
+          last_edited_time: p.last_edited_time,
+        };
+      });
+
+      // Background sync RAG data
+      Promise.resolve().then(async () => {
+        try {
+          await context.prisma.integrationDataNode.deleteMany({
+            where: { organization_id, provider: "notion" }
+          });
+          
+          for (const page of formattedPages) {
+            const content = `Notion Document Page: ${page.title}. URL: ${page.url || "N/A"}.`;
+            const embedding = await generateEmbedding(content);
+            await context.prisma.integrationDataNode.create({
+              data: {
+                organization_id,
+                project_id: "global",
+                provider: "notion",
+                content,
+                embedding,
+              }
+            });
           }
-          return {
-            id: p.id,
-            title,
-            url: p.url,
-            last_edited_time: p.last_edited_time,
-          };
-        }),
+        } catch (e) {
+          console.error("RAG Sync Error (Notion):", e);
+        }
+      });
+
+      return {
+        pages: formattedPages,
       };
     } catch (err) {
       console.error("[Notion API] Error searching pages, returning mockup fallback pages:", err);
