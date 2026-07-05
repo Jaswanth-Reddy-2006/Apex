@@ -47,9 +47,14 @@ function IntegrationsCallbackPage() {
         : stateStr;
 
       try {
+        const currentRedirectUri = `${window.location.origin}/integrations-callback`;
         if (isNotion) {
           const result = await connectNotionOAuthFn({
-            data: { code: search.code, organization_id },
+            data: { 
+              code: search.code, 
+              organization_id, 
+              redirect_uri: currentRedirectUri 
+            },
           });
           if (!active) return;
           if (result && result.success) {
@@ -62,7 +67,11 @@ function IntegrationsCallbackPage() {
           }
         } else if (isGDrive) {
           const result = await connectGoogleDriveOAuthFn({
-            data: { code: search.code, organization_id },
+            data: { 
+              code: search.code, 
+              organization_id, 
+              redirect_uri: currentRedirectUri 
+            },
           });
           if (!active) return;
           if (result && result.success) {

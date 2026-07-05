@@ -1424,10 +1424,11 @@ export const connectNotionOAuth = createServerFn({ method: "POST" })
     z.object({
       code: z.string(),
       organization_id: z.string(),
+      redirect_uri: z.string().optional(),
     }).parse(input),
   )
   .handler(async ({ data, context }) => {
-    const { code, organization_id } = data;
+    const { code, organization_id, redirect_uri } = data;
     await verifyPermission(context, organization_id, "Integrations.Create");
 
     const clientId = process.env.NOTION_CLIENT_ID;
@@ -1437,7 +1438,7 @@ export const connectNotionOAuth = createServerFn({ method: "POST" })
       throw new Error("Notion OAuth credentials not configured on the backend server.");
     }
 
-    const redirectUri = "http://localhost:5173/integrations-callback";
+    const redirectUri = redirect_uri || "http://localhost:5173/integrations-callback";
 
     // 1. Exchange code for access token
     const tokenResponse = await fetch("https://api.notion.com/v1/oauth/token", {
@@ -1695,15 +1696,16 @@ export const connectGoogleDriveOAuth = createServerFn({ method: "POST" })
     z.object({
       code: z.string().min(1),
       organization_id: z.string(),
+      redirect_uri: z.string().optional(),
     }).parse(input),
   )
   .handler(async ({ data, context }) => {
-    const { code, organization_id } = data;
+    const { code, organization_id, redirect_uri } = data;
     await verifyPermission(context, organization_id, "Integrations.Create");
 
     const clientId = process.env.GOOGLE_CLIENT_ID;
     const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
-    const redirectUri = "http://localhost:5173/integrations-callback";
+    const redirectUri = redirect_uri || "http://localhost:5173/integrations-callback";
 
     if (!clientId || !clientSecret) {
       throw new Error("Google OAuth credentials are not configured on the backend server.");
