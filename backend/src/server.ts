@@ -15,8 +15,6 @@ dotenv.config({ path: path.resolve(__dirname, "../.env") });
 import * as apiFunctions from "./services/api.functions.js";
 import * as chatFunctions from "./services/chat.functions.js";
 import * as authFunctions from "./services/auth.functions.js";
-import * as autonomousFunctions from "./services/autonomous.functions.js";
-import * as paymentsFunctions from "./services/payments.functions.js";
 import { Route as chatApiRoute } from "./routes/api/chat.js";
 
 const app = express();
@@ -76,8 +74,6 @@ const allFunctions: Record<string, any> = {
   ...apiFunctions,
   ...chatFunctions,
   ...authFunctions,
-  ...autonomousFunctions,
-  ...paymentsFunctions,
 };
 
 app.all("/api/functions/:name", async (req, res) => {
@@ -153,11 +149,7 @@ app.post("/api/chat", async (req, res) => {
     }
   } catch (err: any) {
     console.error("Error in /api/chat:", err);
-    if (!res.headersSent) {
-      res.status(500).json({ error: err.message || "Internal Server Error" });
-    } else {
-      res.end();
-    }
+    res.status(500).json({ error: err.message || "Internal Server Error" });
   }
 });
 

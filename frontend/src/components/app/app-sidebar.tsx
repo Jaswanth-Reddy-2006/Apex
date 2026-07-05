@@ -15,7 +15,6 @@ import {
   Shield,
   FileText,
   MessageSquare,
-  Cpu,
 } from "lucide-react";
 import {
   Sidebar,
@@ -42,8 +41,6 @@ type Item = {
 
 const primary: Item[] = [
   { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
-  { title: "Autonomous OS", url: "/autonomous-os", icon: Cpu },
-  { title: "Agent Payments", url: "/agent-payments", icon: CreditCard },
   { title: "AI Chat", url: "/chat", icon: MessageSquare, permission: "Chat.Access" },
   { title: "Projects", url: "/projects", icon: FolderKanban, permission: "Project.View" },
   { title: "Members", url: "/members", icon: Users, permission: "People.View" },
