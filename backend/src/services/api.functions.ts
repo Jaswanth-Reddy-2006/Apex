@@ -4,6 +4,7 @@ import { requireAuth } from "../lib/auth-middleware.js";
 import { prisma } from "../lib/prisma.js";
 import { checkPermission, getUserPermissions } from "../lib/permissions.js";
 import { generateEmbedding } from "./rag.js";
+import { scrapeAndChunk } from "./website.js";
 
 /**
  * APEX server-side RPCs. All calls are typed, Zod-validated, and RLS-scoped
@@ -1617,30 +1618,84 @@ export const listNotionPages = createServerFn({ method: "GET" })
       const res: any = await response.json();
       const results = res.results || [];
 
-      return {
-        pages: results.map((p: any) => {
-          let title = "Untitled Page";
-          if (p.properties && p.properties.title && Array.isArray(p.properties.title.title)) {
-            title = p.properties.title.title.map((t: any) => t.plain_text).join("") || title;
-          } else if (p.properties && p.properties.Name && Array.isArray(p.properties.Name.title)) {
-            title = p.properties.Name.title.map((t: any) => t.plain_text).join("") || title;
+      const formattedPages = results.map((p: any) => {
+        let title = "Untitled Page";
+        if (p.properties && p.properties.title && Array.isArray(p.properties.title.title)) {
+          title = p.properties.title.title.map((t: any) => t.plain_text).join("") || title;
+        } else if (p.properties && p.properties.Name && Array.isArray(p.properties.Name.title)) {
+          title = p.properties.Name.title.map((t: any) => t.plain_text).join("") || title;
+        }
+        return {
+          id: p.id,
+          title,
+          url: p.url,
+          last_edited_time: p.last_edited_time,
+        };
+      });
+
+      // Background sync RAG data for Notion
+      Promise.resolve().then(async () => {
+        try {
+          await context.prisma.integrationDataNode.deleteMany({
+            where: { organization_id, provider: "notion" }
+          });
+          
+          for (const page of formattedPages) {
+            const content = `Notion Page: ${page.title}. URL: ${page.url}. Last edited: ${page.last_edited_time}`;
+            const embedding = await generateEmbedding(content);
+            await context.prisma.integrationDataNode.create({
+              data: {
+                organization_id,
+                project_id: "global",
+                provider: "notion",
+                content,
+                embedding,
+              }
+            });
           }
-          return {
-            id: p.id,
-            title,
-            url: p.url,
-            last_edited_time: p.last_edited_time,
-          };
-        }),
+        } catch (e) {
+          console.error("RAG Sync Error (Notion):", e);
+        }
+      });
+
+      return {
+        pages: formattedPages,
       };
     } catch (err) {
       console.error("[Notion API] Error searching pages, returning mockup fallback pages:", err);
+      const mockPages = [
+        { id: "notion-1", title: "APEX Developer Onboarding Wiki", url: "https://notion.so/apex-dev-onboarding", last_edited_time: new Date().toISOString() },
+        { id: "notion-2", title: "Product Roadmap & Sprint Goals", url: "https://notion.so/apex-roadmap-goals", last_edited_time: new Date().toISOString() },
+        { id: "notion-3", title: "Release Sprint Notes v1.2", url: "https://notion.so/apex-release-notes-v1-2", last_edited_time: new Date().toISOString() },
+      ];
+
+      // Background sync RAG data for Notion Mock
+      Promise.resolve().then(async () => {
+        try {
+          await context.prisma.integrationDataNode.deleteMany({
+            where: { organization_id, provider: "notion" }
+          });
+          
+          for (const page of mockPages) {
+            const content = `Notion Page: ${page.title}. URL: ${page.url}. Last edited: ${page.last_edited_time}`;
+            const embedding = await generateEmbedding(content);
+            await context.prisma.integrationDataNode.create({
+              data: {
+                organization_id,
+                project_id: "global",
+                provider: "notion",
+                content,
+                embedding,
+              }
+            });
+          }
+        } catch (e) {
+          console.error("RAG Sync Error (Notion Mock):", e);
+        }
+      });
+
       return {
-        pages: [
-          { id: "notion-1", title: "APEX Developer Onboarding Wiki", url: "https://notion.so/apex-dev-onboarding", last_edited_time: new Date().toISOString() },
-          { id: "notion-2", title: "Product Roadmap & Sprint Goals", url: "https://notion.so/apex-roadmap-goals", last_edited_time: new Date().toISOString() },
-          { id: "notion-3", title: "Release Sprint Notes v1.2", url: "https://notion.so/apex-release-notes-v1-2", last_edited_time: new Date().toISOString() },
-        ],
+        pages: mockPages,
       };
     }
   });
@@ -1900,14 +1955,217 @@ export const listGoogleDriveFiles = createServerFn({ method: "GET" })
       };
     } catch (err) {
       console.error("[Google Drive API] Error listing files, returning mock files instead:", err);
+      const mockFiles = [
+        { id: "gdrive-1", name: "APEX Product Architecture Specs.pdf", mimeType: "application/pdf", url: "https://drive.google.com/file/d/apex-architecture", modifiedTime: new Date().toISOString() },
+        { id: "gdrive-2", name: "Q3 Project Cost Analysis & Budget.xlsx", mimeType: "application/vnd.google-apps.spreadsheet", url: "https://drive.google.com/file/d/q3-budget", modifiedTime: new Date().toISOString() },
+        { id: "gdrive-3", name: "Apex Logo Branding Kit Assets.zip", mimeType: "application/zip", url: "https://drive.google.com/file/d/logo-branding", modifiedTime: new Date().toISOString() },
+      ];
+
+      // Background sync RAG data for Google Drive Mock
+      Promise.resolve().then(async () => {
+        try {
+          await context.prisma.integrationDataNode.deleteMany({
+            where: { organization_id, provider: "gdrive" }
+          });
+          
+          for (const file of mockFiles) {
+            const content = `Google Drive File: ${file.name}. Type: ${file.mimeType}. URL: ${file.url}.`;
+            const embedding = await generateEmbedding(content);
+            await context.prisma.integrationDataNode.create({
+              data: {
+                organization_id,
+                project_id: "global",
+                provider: "gdrive",
+                content,
+                embedding,
+              }
+            });
+          }
+        } catch (e) {
+          console.error("RAG Sync Error (Google Drive Mock):", e);
+        }
+      });
+
       return {
-        files: [
-          { id: "gdrive-1", name: "APEX Product Architecture Specs.pdf", mimeType: "application/pdf", url: "https://drive.google.com/file/d/apex-architecture", modifiedTime: new Date().toISOString() },
-          { id: "gdrive-2", name: "Q3 Project Cost Analysis & Budget.xlsx", mimeType: "application/vnd.google-apps.spreadsheet", url: "https://drive.google.com/file/d/q3-budget", modifiedTime: new Date().toISOString() },
-          { id: "gdrive-3", name: "Apex Logo Branding Kit Assets.zip", mimeType: "application/zip", url: "https://drive.google.com/file/d/logo-branding", modifiedTime: new Date().toISOString() },
-        ],
+        files: mockFiles,
       };
     }
+  });
+
+export const scrapeWebsite = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((input) =>
+    z.object({
+      url: z.string().trim().url(),
+      organization_id: z.string(),
+    }).parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    const { url, organization_id } = data;
+    
+    // Find or create the single website connection
+    let connection = await context.prisma.integrationConnection.findFirst({
+      where: {
+        organization_id,
+        provider: "website",
+        connected_by: context.userId,
+      }
+    });
+
+    let currentWebsites: Array<{ url: string; title: string; chunks_count: number; created_at: string }> = [];
+    if (connection && connection.metadata) {
+      try {
+        currentWebsites = JSON.parse(connection.metadata);
+      } catch (e) {
+        currentWebsites = [];
+      }
+    }
+
+    if (currentWebsites.some((w: any) => w.url.toLowerCase() === url.toLowerCase())) {
+      throw new Error("This website has already been scraped and indexed.");
+    }
+
+    console.log(`[Website Scraper] Scraping and indexing: ${url}`);
+    
+    // Run the scraper
+    const { title, chunks } = await scrapeAndChunk(url);
+    
+    // Generate embeddings and store nodes in the database
+    for (const chunk of chunks) {
+      const embedding = await generateEmbedding(chunk);
+      await context.prisma.integrationDataNode.create({
+        data: {
+          organization_id,
+          project_id: "global",
+          provider: "website",
+          content: chunk,
+          embedding,
+        }
+      });
+    }
+
+    // Add to the websites list
+    currentWebsites.push({
+      url,
+      title,
+      chunks_count: chunks.length,
+      created_at: new Date().toISOString(),
+    });
+
+    if (connection) {
+      connection = await context.prisma.integrationConnection.update({
+        where: { id: connection.id },
+        data: {
+          status: "connected",
+          metadata: JSON.stringify(currentWebsites),
+          display_name: `${currentWebsites.length} website(s) indexed`,
+        }
+      });
+    } else {
+      connection = await context.prisma.integrationConnection.create({
+        data: {
+          organization_id,
+          provider: "website",
+          connected_by: context.userId,
+          status: "connected",
+          credentials_vault_key: "embedded_source",
+          display_name: `1 website indexed`,
+          metadata: JSON.stringify(currentWebsites),
+        }
+      });
+    }
+
+    return { success: true, connection };
+  });
+
+export const listScrapedWebsites = createServerFn({ method: "GET" })
+  .middleware([requireAuth])
+  .inputValidator((input) =>
+    z.object({
+      organization_id: z.string(),
+    }).parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    const { organization_id } = data;
+    const connection = await context.prisma.integrationConnection.findFirst({
+      where: {
+        organization_id,
+        provider: "website",
+        connected_by: context.userId,
+      }
+    });
+
+    if (!connection || !connection.metadata) {
+      return [];
+    }
+
+    try {
+      return JSON.parse(connection.metadata);
+    } catch (e) {
+      return [];
+    }
+  });
+
+export const deleteScrapedWebsite = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .inputValidator((input) =>
+    z.object({
+      url: z.string().trim().url(),
+      organization_id: z.string(),
+    }).parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    const { url, organization_id } = data;
+    
+    const connection = await context.prisma.integrationConnection.findFirst({
+      where: {
+        organization_id,
+        provider: "website",
+        connected_by: context.userId,
+      }
+    });
+
+    if (!connection) {
+      throw new Error("No website integration found");
+    }
+
+    let currentWebsites: Array<{ url: string; title: string; chunks_count: number; created_at: string }> = [];
+    try {
+      currentWebsites = JSON.parse(connection.metadata || "[]");
+    } catch (e) {
+      currentWebsites = [];
+    }
+
+    // Filter out the deleted website
+    const updatedWebsites = currentWebsites.filter((w: any) => w.url.toLowerCase() !== url.toLowerCase());
+
+    // Delete associated data nodes
+    await context.prisma.integrationDataNode.deleteMany({
+      where: {
+        organization_id,
+        provider: "website",
+        content: {
+          contains: `Website URL: ${url}`,
+        }
+      }
+    });
+
+    if (updatedWebsites.length > 0) {
+      await context.prisma.integrationConnection.update({
+        where: { id: connection.id },
+        data: {
+          metadata: JSON.stringify(updatedWebsites),
+          display_name: `${updatedWebsites.length} website(s) indexed`,
+        }
+      });
+    } else {
+      // If no websites left, delete the connection record
+      await context.prisma.integrationConnection.delete({
+        where: { id: connection.id }
+      });
+    }
+
+    return { success: true };
   });
 
 
