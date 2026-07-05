@@ -1,9 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
+import { motion, useInView } from "framer-motion";
 import {
-  CheckCircle2,
   Circle,
   Lock,
   Loader2,
@@ -11,7 +11,8 @@ import {
   Trash2,
   Settings2,
   BookOpen,
-  AlertTriangle,
+  ArrowRight,
+  Zap,
 } from "lucide-react";
 import {
   listIntegrations,
@@ -30,7 +31,6 @@ import {
 import { INTEGRATIONS, type IntegrationDefinition } from "@/lib/integrations-catalog";
 import { useOrg } from "@/lib/org-context";
 import { PageHeader, EmptyState } from "@/components/app/page-header";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -38,6 +38,16 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
+import {
+  ConnectConfirmModal,
+  RedirectLoadingOverlay,
+  DisconnectConfirmModal,
+  DisconnectLoadingModal,
+  DisconnectSuccessModal,
+  ConnectionErrorModal,
+} from "@/components/app/integration-modals";
+
 
 export const Route = createFileRoute("/_authenticated/integrations")({
   component: IntegrationsPage,
@@ -51,6 +61,15 @@ const CATEGORY_LABELS: Record<IntegrationDefinition["category"], string> = {
   ai: "AI providers",
   payments: "Payments",
 };
+
+// Shape returned by listIntegrations server function
+interface IntegrationRecord {
+  provider: string;
+  status: string;
+  display_name?: string;
+  created_at?: string;
+  [key: string]: unknown;
+}
 
 function IntegrationsPage() {
   const { activeOrg, hasPermission, loading } = useOrg();
@@ -85,6 +104,14 @@ function IntegrationsPage() {
   const [websiteOpen, setWebsiteOpen] = useState(false);
   const [newUrl, setNewUrl] = useState("");
   const [scraping, setScraping] = useState(false);
+
+  // ── Premium Modal State ──────────────────────────────────────────────────
+  const [connectModalItem, setConnectModalItem] = useState<IntegrationDefinition | null>(null);
+  const [redirectingTo, setRedirectingTo] = useState<string | null>(null);
+  const [disconnectModalItem, setDisconnectModalItem] = useState<IntegrationDefinition | null>(null);
+  const [disconnectLoadingItem, setDisconnectLoadingItem] = useState<string | null>(null);
+  const [disconnectSuccessItem, setDisconnectSuccessItem] = useState<string | null>(null);
+  const [connectErrorItem, setConnectErrorItem] = useState<{ item: IntegrationDefinition; type: "generic" | "offline" | "cancelled" } | null>(null);
 
   const listWebsitesFn = useServerFn(listScrapedWebsites);
   const scrapeWebsiteFn = useServerFn(scrapeWebsite);
@@ -146,11 +173,14 @@ function IntegrationsPage() {
         data: { organization_id: activeOrg?.organization_id!, provider },
       }),
     onSuccess: (_, provider) => {
-      toast.success(`${provider} disconnected successfully.`);
       queryClient.invalidateQueries({ queryKey: ["integrations", activeOrg?.organization_id] });
       setSelectedManageIntegration(null);
+      setDisconnectLoadingItem(null);
+      // show success modal briefly
+      setDisconnectSuccessItem(provider);
     },
     onError: (err: any) => {
+      setDisconnectLoadingItem(null);
       toast.error(err.message || "Failed to disconnect integration.");
     },
   });
@@ -193,14 +223,37 @@ function IntegrationsPage() {
   
   if (loading || isLoading) {
     return (
-      <div className="space-y-4">
-        <Skeleton className="h-10 w-64" />
-        <Skeleton className="h-32 w-full" />
+      <div className="space-y-10 p-1">
+        <div className="space-y-2">
+          <Skeleton className="h-8 w-48 rounded-xl" />
+          <Skeleton className="h-4 w-72 rounded-lg" />
+        </div>
+        {[0, 1].map((s) => (
+          <div key={s} className="space-y-4">
+            <Skeleton className="h-5 w-32 rounded-lg" />
+            <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+              {[0, 1, 2].map((i) => (
+                <div key={i} className="rounded-3xl border border-border/40 p-6 space-y-4 bg-card/80 backdrop-blur-sm relative overflow-hidden">
+                  <div className="absolute inset-0 bg-gradient-to-br from-white/5 to-transparent" />
+                  <div className="flex items-center gap-3">
+                    <Skeleton className="h-12 w-12 rounded-2xl" />
+                    <div className="space-y-2 flex-1">
+                      <Skeleton className="h-4 w-28" />
+                      <Skeleton className="h-3 w-20" />
+                    </div>
+                    <Skeleton className="h-6 w-20 rounded-full" />
+                  </div>
+                  <Skeleton className="h-10 w-full rounded-xl" />
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
       </div>
     );
   }
 
-  if (!hasPermission("Integrations.Connect")) {
+  if (!hasPermission("Integrations.Read")) {
     return (
       <div className="space-y-6">
         <PageHeader title="Access Denied" />
@@ -213,7 +266,7 @@ function IntegrationsPage() {
     );
   }
 
-  const connected = new Map((data ?? []).map((r) => [r.provider, r]));
+  const connected = new Map((data ?? []).map((r: IntegrationRecord) => [r.provider, r]));
 
   const grouped = INTEGRATIONS.reduce<Record<string, IntegrationDefinition[]>>((acc, i) => {
     (acc[i.category] ??= []).push(i);
@@ -221,98 +274,90 @@ function IntegrationsPage() {
   }, {});
 
   const handleConnectClick = (item: IntegrationDefinition, isConnected: boolean) => {
+    if (isConnected) {
+      // Already connected — show manage toast
+      const conn = connected.get(item.id);
+      toast.success(`Already connected as: ${(conn as any)?.display_name || "Authorized User"}`);
+      return;
+    }
+    if (item.id === "website") {
+      setWebsiteOpen(true);
+      return;
+    }
+    if (!activeOrg?.organization_id) {
+      toast.error("No active organization found.");
+      return;
+    }
+    // Show the premium confirm modal instead of redirecting immediately
+    setConnectModalItem(item);
+  };
+
+  // Called when user clicks "Continue" in the connect confirm modal
+  const handleConfirmConnect = () => {
+    const item = connectModalItem;
+    if (!item || !activeOrg?.organization_id) return;
+    setConnectModalItem(null);
+    setRedirectingTo(item.name);
+
     if (item.id === "github") {
-      if (isConnected) {
-        const conn = connected.get("github");
-        toast.success(`Already connected to GitHub as: ${conn?.display_name || "Authorized User"}`);
-        return;
-      }
       const clientId = import.meta.env.VITE_GITHUB_CLIENT_ID || "";
       if (!clientId) {
+        setRedirectingTo(null);
         toast.error("Please add VITE_GITHUB_CLIENT_ID to your frontend/.env file.");
         return;
       }
-      if (!activeOrg?.organization_id) {
-        toast.error("No active organization found.");
-        return;
-      }
-
       const redirectUri = encodeURIComponent(`${window.location.origin}/integrations-callback`);
-      const githubOAuthUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&scope=repo,user&state=${activeOrg.organization_id}`;
-      
-      const toastId = toast.loading("Redirecting to GitHub for authorization...");
-      window.location.href = githubOAuthUrl;
       setTimeout(() => {
-        toast.dismiss(toastId);
-      }, 5000);
+        window.location.href = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&scope=repo,user&state=${activeOrg.organization_id}`;
+      }, 600);
     } else if (item.id === "gitlab") {
-      if (isConnected) {
-        const conn = connected.get("gitlab");
-        toast.success(`Already connected to GitLab as: ${conn?.display_name || "Authorized User"}`);
-        return;
-      }
-      if (!activeOrg?.organization_id) {
-        toast.error("No active organization found.");
-        return;
-      }
+      setRedirectingTo(null);
       setGitlabUser("");
       setGitlabToken("");
       setGitlabOpen(true);
     } else if (item.id === "notion") {
-      if (isConnected) {
-        const conn = connected.get("notion");
-        toast.success(`Already connected to Notion Workspace: ${conn?.display_name || "Authorized Workspace"}`);
-        return;
-      }
-      if (!activeOrg?.organization_id) {
-        toast.error("No active organization found.");
-        return;
-      }
       const clientId = import.meta.env.VITE_NOTION_CLIENT_ID || "";
       if (!clientId) {
+        setRedirectingTo(null);
         setNotionToken("");
         setNotionWorkspace("");
         setNotionOpen(true);
         return;
       }
       const redirectUri = encodeURIComponent(`${window.location.origin}/integrations-callback`);
-      const notionOAuthUrl = `https://api.notion.com/v1/oauth/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=code&owner=user&state=notion:${activeOrg.organization_id}`;
-      
-      const toastId = toast.loading("Redirecting to Notion for authorization...");
-      window.location.href = notionOAuthUrl;
       setTimeout(() => {
-        toast.dismiss(toastId);
-      }, 5000);
+        window.location.href = `https://api.notion.com/v1/oauth/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=code&owner=user&state=notion:${activeOrg.organization_id}`;
+      }, 600);
     } else if (item.id === "gdrive") {
-      if (isConnected) {
-        const conn = connected.get("gdrive");
-        toast.success(`Already connected to Google Drive: ${conn?.display_name || "Authorized Drive"}`);
-        return;
-      }
-      if (!activeOrg?.organization_id) {
-        toast.error("No active organization found.");
-        return;
-      }
       const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || "";
       if (!clientId) {
+        setRedirectingTo(null);
         setGdriveToken("");
         setGdriveUser("");
         setGdriveOpen(true);
         return;
       }
       const redirectUri = encodeURIComponent(`${window.location.origin}/integrations-callback`);
-      const googleOAuthUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=code&scope=https://www.googleapis.com/auth/drive.readonly%20https://www.googleapis.com/auth/userinfo.profile&access_type=offline&prompt=consent&state=gdrive:${activeOrg.organization_id}`;
-      
-      const toastId = toast.loading("Redirecting to Google for authorization...");
-      window.location.href = googleOAuthUrl;
       setTimeout(() => {
-        toast.dismiss(toastId);
-      }, 5000);
-    } else if (item.id === "website") {
-      setWebsiteOpen(true);
+        window.location.href = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=code&scope=https://www.googleapis.com/auth/drive.readonly%20https://www.googleapis.com/auth/userinfo.profile&access_type=offline&prompt=consent&state=gdrive:${activeOrg.organization_id}`;
+      }, 600);
     } else {
+      setRedirectingTo(null);
       toast.info(`${item.name} integration will be enabled soon.`);
     }
+  };
+
+  // Disconnect flow — show confirmation modal first
+  const handleDisconnectRequest = (item: IntegrationDefinition) => {
+    setDisconnectModalItem(item);
+  };
+
+  const handleConfirmDisconnect = () => {
+    const item = disconnectModalItem;
+    if (!item) return;
+    setDisconnectModalItem(null);
+    setDisconnectLoadingItem(item.id);
+    disconnectMutation.mutate(item.id);
   };
 
   const handleGitlabConnect = async (e: React.FormEvent) => {
@@ -391,105 +436,91 @@ function IntegrationsPage() {
   };
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-12 relative">
+      {/* Subtle radial background blur */}
+      <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
+        <div className="absolute top-0 right-1/4 h-[500px] w-[500px] rounded-full bg-primary/5 blur-[120px]" />
+        <div className="absolute bottom-0 left-1/4 h-[400px] w-[400px] rounded-full bg-primary/4 blur-[100px]" />
+      </div>
+
       <PageHeader
         title="Integrations"
         description="Connect APEX to the services your team already uses."
       />
 
-      {Object.entries(grouped).map(([cat, items]) => (
-        <section key={cat} className="space-y-3">
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+      {Object.entries(grouped).map(([cat, items], catIdx) => (
+        <AnimatedSection key={cat} delay={catIdx * 0.1}>
+          <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-6 pl-1">
             {CATEGORY_LABELS[cat as IntegrationDefinition["category"]]}
           </h2>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {items.map((i) => {
+          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            {items.map((i, idx) => {
               const conn = connected.get(i.id);
-              const isConnected = conn?.status === "connected";
+              const isConnected = (conn as IntegrationRecord | undefined)?.status === "connected";
               return (
-                <Card key={i.id} className="transition hover:shadow-soft">
-                  <CardHeader className="flex flex-row items-center justify-between pb-3">
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary-soft text-primary font-semibold">
-                        {i.name[0]}
-                      </div>
-                      <div>
-                        <CardTitle className="text-base">{i.name}</CardTitle>
-                        {isConnected ? (
-                          <p className="text-xs text-success font-mono font-medium">@{conn?.display_name}</p>
-                        ) : (
-                          <p className="text-xs text-muted-foreground">{i.description}</p>
-                        )}
-                      </div>
-                    </div>
-                    {isConnected ? (
-                      <Badge className="gap-1 bg-success text-success-foreground">
-                        <CheckCircle2 className="h-3 w-3" /> Connected
-                      </Badge>
-                    ) : (
-                      <Badge variant="outline" className="gap-1">
-                        <Circle className="h-3 w-3" /> Not connected
-                      </Badge>
-                    )}
-                  </CardHeader>
-                  <CardContent className="pt-0 space-y-3">
-                    {isConnected && conn?.created_at && (
-                      <p className="text-[11px] text-muted-foreground">
-                        Connected on {new Date(conn.created_at).toLocaleDateString()}
-                      </p>
-                    )}
-                    <div className="flex gap-2 w-full">
-                      {isConnected ? (
-                        <>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="flex-1"
-                            onClick={() => {
-                              if (i.id === "website") {
-                                setWebsiteOpen(true);
-                              } else {
-                                setSelectedManageIntegration(i.id);
-                              }
-                            }}
-                          >
-                            <Settings2 className="mr-1.5 h-3.5 w-3.5" />
-                            Manage
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="text-destructive hover:bg-destructive/10"
-                            onClick={() => {
-                              if (confirm(`Are you sure you want to disconnect ${i.name}?`)) {
-                                disconnectMutation.mutate(i.id);
-                              }
-                            }}
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
-                        </>
-                      ) : (
-                        <Button
-                          variant="default"
-                          size="sm"
-                          className="w-full gradient-primary text-primary-foreground"
-                          onClick={() => handleConnectClick(i, isConnected)}
-                        >
-                          Connect
-                        </Button>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
+                <IntegrationCard
+                  key={i.id}
+                  item={i}
+                  conn={conn}
+                  isConnected={isConnected}
+                  index={idx}
+                  onConnect={() => handleConnectClick(i, isConnected)}
+                  onManage={() => {
+                    if (i.id === "website") setWebsiteOpen(true);
+                    else setSelectedManageIntegration(i.id);
+                  }}
+                  onDisconnect={() => handleDisconnectRequest(i)}
+                  isDisconnecting={disconnectLoadingItem === i.id}
+                />
               );
             })}
           </div>
-        </section>
+        </AnimatedSection>
       ))}
 
+      {/* ─── Premium Modals ─────────────────────────────────────────────── */}
+      {connectModalItem && (
+        <ConnectConfirmModal
+          integrationName={connectModalItem.name}
+          integrationId={connectModalItem.id}
+          onConfirm={handleConfirmConnect}
+          onCancel={() => setConnectModalItem(null)}
+        />
+      )}
+      {redirectingTo && (
+        <RedirectLoadingOverlay integrationName={redirectingTo} />
+      )}
+      {disconnectModalItem && (
+        <DisconnectConfirmModal
+          integrationName={disconnectModalItem.name}
+          onConfirm={handleConfirmDisconnect}
+          onCancel={() => setDisconnectModalItem(null)}
+        />
+      )}
+      {disconnectLoadingItem && (
+        <DisconnectLoadingModal integrationName={disconnectLoadingItem} />
+      )}
+      {disconnectSuccessItem && (
+        <DisconnectSuccessModal
+          integrationName={disconnectSuccessItem}
+          onDone={() => setDisconnectSuccessItem(null)}
+        />
+      )}
+      {connectErrorItem && (
+        <ConnectionErrorModal
+          integrationName={connectErrorItem.item.name}
+          errorType={connectErrorItem.type}
+          onRetry={() => {
+            const item = connectErrorItem.item;
+            setConnectErrorItem(null);
+            setTimeout(() => setConnectModalItem(item), 200);
+          }}
+          onCancel={() => setConnectErrorItem(null)}
+        />
+      )}
+
       <Dialog open={gitlabOpen} onOpenChange={setGitlabOpen}>
-        <DialogContent>
+        <DialogContent className="glass-panel">
           <DialogHeader>
             <DialogTitle>Connect GitLab</DialogTitle>
           </DialogHeader>
@@ -529,7 +560,7 @@ function IntegrationsPage() {
       </Dialog>
 
       <Dialog open={notionOpen} onOpenChange={setNotionOpen}>
-        <DialogContent>
+        <DialogContent className="glass-panel">
           <DialogHeader>
             <DialogTitle>Connect Notion Workspace</DialogTitle>
           </DialogHeader>
@@ -588,8 +619,8 @@ function IntegrationsPage() {
               <div className="space-y-1">
                 <p className="text-xs text-muted-foreground uppercase font-semibold tracking-wider">Account Connection</p>
                 <p className="text-sm font-semibold text-foreground">
-                  {selectedManageIntegration && connected.get(selectedManageIntegration)?.display_name ? (
-                    <span>@{connected.get(selectedManageIntegration)?.display_name}</span>
+                  {selectedManageIntegration && (connected.get(selectedManageIntegration) as IntegrationRecord | undefined)?.display_name ? (
+                    <span>@{(connected.get(selectedManageIntegration) as IntegrationRecord | undefined)?.display_name}</span>
                   ) : (
                     <span>Authorized Account</span>
                   )}
@@ -864,5 +895,284 @@ function IntegrationsPage() {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+// ─── Helper: Section Fade-Up on Scroll ───────────────────────────────────────
+function AnimatedSection({
+  children,
+  delay = 0,
+}: {
+  children: React.ReactNode;
+  delay?: number;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const inView = useInView(ref, { once: true, margin: "-60px" });
+  return (
+    <motion.section
+      ref={ref}
+      initial={{ opacity: 0, y: 24 }}
+      animate={inView ? { opacity: 1, y: 0 } : {}}
+      transition={{ duration: 0.5, ease: "easeOut", delay }}
+      className="space-y-0"
+    >
+      {children}
+    </motion.section>
+  );
+}
+
+// ─── Helper: Premium Integration Card ────────────────────────────────────────
+function IntegrationCard({
+  item,
+  conn,
+  isConnected,
+  index,
+  onConnect,
+  onManage,
+  onDisconnect,
+  isDisconnecting,
+}: {
+  item: IntegrationDefinition;
+  conn: any;
+  isConnected: boolean;
+  index: number;
+  onConnect: () => void;
+  onManage: () => void;
+  onDisconnect: () => void;
+  isDisconnecting: boolean;
+}) {
+  const [isHovered, setIsHovered] = useState(false);
+  const [mousePos, setMousePos] = useState({ x: 0.5, y: 0.5 });
+  const cardRef = useRef<HTMLDivElement>(null);
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!cardRef.current) return;
+    const rect = cardRef.current.getBoundingClientRect();
+    setMousePos({
+      x: (e.clientX - rect.left) / rect.width,
+      y: (e.clientY - rect.top) / rect.height,
+    });
+  };
+
+  const tiltX = isHovered ? (mousePos.y - 0.5) * -2 : 0;
+  const tiltY = isHovered ? (mousePos.x - 0.5) * 2 : 0;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20, scale: 0.97 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ duration: 0.42, delay: index * 0.06, ease: "easeOut" }}
+    >
+      <motion.div
+        ref={cardRef}
+        className={cn(
+          // Base card — always white, never green
+          "relative overflow-hidden cursor-default",
+          "bg-white/80 dark:bg-card/80 backdrop-blur-[12px]",
+          "border rounded-3xl",
+          "transition-colors duration-300",
+          // Connected: thin left accent line via box-ring + soft border
+          isConnected
+            ? "border-border/50 shadow-[0_2px_16px_-4px_rgba(0,0,0,0.08),inset_3px_0_0_0_rgba(34,197,94,0.75)]"
+            : "border-border/40 shadow-[0_2px_16px_-4px_rgba(0,0,0,0.06)]",
+          isHovered && "border-primary/20 shadow-[0_12px_40px_-8px_rgba(0,0,0,0.13),inset_3px_0_0_0_rgba(34,197,94,0.75)]",
+        )}
+        style={{
+          transform: `perspective(900px) rotateX(${tiltX}deg) rotateY(${tiltY}deg) ${isHovered ? "translateY(-6px) scale(1.018)" : "translateY(0) scale(1)"}`,
+          transition: "transform 250ms ease-out, box-shadow 250ms ease-out, border-color 250ms ease-out",
+        }}
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => { setIsHovered(false); setMousePos({ x: 0.5, y: 0.5 }); }}
+        onMouseMove={handleMouseMove}
+      >
+        {/* Glass top shine */}
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/60 to-transparent" />
+
+        {/* Mouse-following soft reflection */}
+        <div
+          className="pointer-events-none absolute inset-0 rounded-3xl"
+          style={{
+            opacity: isHovered ? 0.05 : 0,
+            background: `radial-gradient(circle at ${mousePos.x * 100}% ${mousePos.y * 100}%, white, transparent 65%)`,
+            transition: "opacity 200ms",
+          }}
+        />
+
+        {/* Very subtle connected health indicator at top-right */}
+        {isConnected && (
+          <div className="absolute top-4 right-4 z-10">
+            <span className="relative flex h-2 w-2">
+              <span
+                className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-50"
+                style={{ animationDuration: "4s" }}
+              />
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+            </span>
+          </div>
+        )}
+
+        <div className="relative p-6 space-y-4">
+          {/* ── Row 1: Logo + Name + Status badge ── */}
+          <div className="flex items-center gap-3">
+            {/* Logo — circular glass container, always neutral */}
+            <motion.div
+              className={cn(
+                "flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl",
+                "bg-primary/8 text-primary border border-primary/10 font-bold text-base shadow-sm",
+              )}
+              whileHover={{ scale: 1.08, rotate: 3 }}
+              transition={{ duration: 0.22, ease: "easeOut" }}
+            >
+              {item.name[0]}
+            </motion.div>
+
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <h3 className="font-semibold text-[15px] leading-tight text-foreground truncate">
+                  {item.name}
+                </h3>
+              </div>
+              {isConnected ? (
+                <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                  <span className="text-emerald-600 font-medium">@{(conn as any)?.display_name}</span>
+                </p>
+              ) : (
+                <p className="text-xs text-muted-foreground mt-0.5 leading-snug line-clamp-1">
+                  {item.description}
+                </p>
+              )}
+            </div>
+
+            {/* Status badge */}
+            {isConnected ? (
+              <motion.div
+                whileHover={{ scale: 1.05 }}
+                className="shrink-0 flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold bg-emerald-50/80 text-emerald-700 border border-emerald-200/60"
+                title="Connected · Active"
+              >
+                <Zap className="h-2.5 w-2.5" />
+                Connected
+              </motion.div>
+            ) : (
+              <motion.div
+                whileHover={{ scale: 1.04 }}
+                className="shrink-0 flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium bg-muted/50 text-muted-foreground border border-border/50"
+              >
+                <Circle className="h-2 w-2" />
+                Not connected
+              </motion.div>
+            )}
+          </div>
+
+          {/* ── Row 2: Connected meta — Last Sync / Connected since ── */}
+          {isConnected && (conn as any)?.created_at && (
+            <div className="flex items-center gap-4 px-1">
+              <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                <div className="h-3 w-3 rounded-full bg-emerald-100 flex items-center justify-center">
+                  <div className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                </div>
+                <span>
+                  Since{" "}
+                  <span className="font-medium text-foreground/70">
+                    {new Date((conn as any).created_at).toLocaleDateString("en-US", {
+                      month: "short",
+                      day: "numeric",
+                      year: "numeric",
+                    })}
+                  </span>
+                </span>
+              </div>
+              <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                <div className="h-1 w-1 rounded-full bg-muted-foreground/30" />
+                <span className="text-emerald-600 font-medium">Healthy</span>
+              </div>
+            </div>
+          )}
+
+          {/* ── Divider ── */}
+          <div className="h-px bg-border/40" />
+
+          {/* ── Row 3: Action buttons ── */}
+          <div className="flex gap-2">
+            {isConnected ? (
+              <>
+                {/* Manage — glass style */}
+                <motion.button
+                  className={cn(
+                    "group flex flex-1 items-center justify-center gap-1.5",
+                    "rounded-xl border border-border/60 bg-muted/30 backdrop-blur-sm",
+                    "px-3 py-2.5 text-[13px] font-medium text-foreground",
+                    "transition-all duration-200",
+                    "hover:border-primary/25 hover:bg-primary/5 hover:text-primary hover:shadow-[0_2px_12px_-4px_rgba(108,76,241,0.2)]",
+                  )}
+                  whileHover={{ y: -1 }}
+                  whileTap={{ scale: 0.97 }}
+                  onClick={onManage}
+                >
+                  <motion.span
+                    whileHover={{ rotate: 22 }}
+                    transition={{ duration: 0.2 }}
+                    className="inline-flex shrink-0"
+                  >
+                    <Settings2 className="h-3.5 w-3.5" />
+                  </motion.span>
+                  Manage
+                </motion.button>
+
+                {/* Disconnect — circular glass icon button */}
+                <motion.button
+                  className={cn(
+                    "flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-xl",
+                    "border border-border/60 bg-muted/30 backdrop-blur-sm text-muted-foreground",
+                    "transition-all duration-200",
+                    "hover:border-red-300/60 hover:bg-red-50/80 hover:text-red-600",
+                    "hover:shadow-[0_2px_14px_-4px_rgba(239,68,68,0.25)]",
+                  )}
+                  whileHover={{ y: -1, scale: 1.04 }}
+                  whileTap={{ scale: 0.93 }}
+                  onClick={onDisconnect}
+                  disabled={isDisconnecting}
+                  title="Disconnect integration"
+                >
+                  {isDisconnecting ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Trash2 className="h-3.5 w-3.5" />
+                  )}
+                </motion.button>
+              </>
+            ) : (
+              /* Connect — gradient primary with arrow */
+              <motion.button
+                className={cn(
+                  "group relative flex w-full items-center justify-center gap-2",
+                  "rounded-xl gradient-primary text-primary-foreground",
+                  "px-4 py-2.5 text-[13px] font-semibold",
+                  "shadow-[0_2px_10px_-2px_rgba(108,76,241,0.35)]",
+                  "overflow-hidden",
+                )}
+                whileHover={{
+                  y: -2,
+                  scale: 1.015,
+                  boxShadow: "0 8px 24px -4px rgba(108,76,241,0.42)",
+                }}
+                whileTap={{ scale: 0.97 }}
+                onClick={onConnect}
+              >
+                <span>Connect</span>
+                <motion.span
+                  className="inline-flex"
+                  initial={{ x: 0 }}
+                  whileHover={{ x: 3 }}
+                  transition={{ duration: 0.18 }}
+                >
+                  <ArrowRight className="h-3.5 w-3.5" />
+                </motion.span>
+              </motion.button>
+            )}
+          </div>
+        </div>
+      </motion.div>
+    </motion.div>
   );
 }

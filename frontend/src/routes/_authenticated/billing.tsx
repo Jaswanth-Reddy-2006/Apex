@@ -44,7 +44,7 @@ function BillingPage() {
     );
   }
 
-  if (!hasPermission("Billing.View")) {
+  if (!hasPermission("Billing.Read")) {
     return (
       <div className="space-y-6">
         <PageHeader title="Access Denied" />

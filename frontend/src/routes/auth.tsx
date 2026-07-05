@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Loader2, ArrowLeft, ArrowRight } from "lucide-react";
 
@@ -140,7 +141,9 @@ function AuthPage() {
         <div className="mb-6 flex justify-center">
           <ApexLogo />
         </div>
-        <div className="rounded-2xl border border-border bg-card p-8 shadow-elegant">
+        <div className="glass-panel p-8 shadow-elegant relative overflow-hidden">
+          <div className="absolute inset-0 bg-gradient-to-b from-primary/5 to-transparent opacity-50 pointer-events-none" />
+          <div className="relative z-10">
           <div className="mb-6 text-center">
             <h1 className="text-xl font-semibold tracking-tight">Welcome to APEX</h1>
             <p className="mt-1 text-sm text-muted-foreground">
@@ -161,6 +164,7 @@ function AuthPage() {
               <RegisterWizard />
             </TabsContent>
           </Tabs>
+          </div>
         </div>
 
         <p className="mt-6 text-center text-xs text-muted-foreground">
@@ -429,10 +433,10 @@ function RegisterWizard() {
 
             <div 
               role="button" 
-              className={cn("border rounded-xl p-4 cursor-pointer transition-colors", path === "demo" ? "border-primary bg-primary/5" : "hover:border-primary/50")}
+              className={cn("border rounded-xl p-4 cursor-pointer transition-all duration-300", path === "demo" ? "border-primary bg-primary/10 shadow-[0_0_15px_rgba(var(--color-primary),0.15)]" : "hover:border-primary/50 hover:bg-muted/50")}
               onClick={() => setPath("demo")}
             >
-              <h4 className="font-medium">Try Demo Mode</h4>
+              <h4 className="font-medium text-primary">Try Demo Mode</h4>
               <p className="text-xs text-muted-foreground mt-1">Explore Apex AI with a specific enterprise role. A personal sandbox will be created for you.</p>
             </div>
           </div>

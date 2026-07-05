@@ -46,7 +46,7 @@ function AuditPage() {
     );
   }
 
-  if (!hasPermission("Audit.View")) {
+  if (!hasPermission("Audit.Read")) {
     return (
       <div className="space-y-6">
         <PageHeader title="Access Denied" />

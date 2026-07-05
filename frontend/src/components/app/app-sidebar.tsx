@@ -15,7 +15,6 @@ import {
   Shield,
   FileText,
   MessageSquare,
-  Cpu,
   Triangle,
 } from "lucide-react";
 import {
@@ -43,24 +42,21 @@ type Item = {
 
 const primary: Item[] = [
   { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
-  { title: "Autonomous OS", url: "/autonomous-os", icon: Cpu },
-  { title: "Agent Payments", url: "/agent-payments", icon: CreditCard },
-  { title: "AI Chat", url: "/chat", icon: MessageSquare, permission: "Chat.Access" },
+  { title: "AI Chat", url: "/chat", icon: MessageSquare, permission: "Chat.Read" },
   { title: "Organization", url: "/organization", icon: Building2, permission: "Org.Manage" },
-  { title: "Workspaces", url: "/workspace", icon: Boxes, permission: "Workspace.View" },
-  { title: "Projects", url: "/projects", icon: FolderKanban, permission: "Project.View" },
-  { title: "Members", url: "/members", icon: Users, permission: "People.View" },
-  { title: "Roles", url: "/roles", icon: Shield, permission: "Roles.View" },
-  { title: "Integrations", url: "/integrations", icon: Plug, permission: "Integrations.Connect" },
-  { title: "Vercel", url: "/vercel", icon: Triangle, permission: "Integrations.Connect" },
-  { title: "Analytics", url: "/analytics", icon: BarChart3, permission: "Analytics.View" },
-  { title: "Audit Logs", url: "/audit", icon: FileText, permission: "Audit.View" },
+  { title: "Workspaces", url: "/workspace", icon: Boxes, permission: "Workspace.Read" },
+  { title: "Projects", url: "/projects", icon: FolderKanban, permission: "Project.Read" },
+  { title: "Members", url: "/members", icon: Users, permission: "People.Read" },
+  { title: "Roles", url: "/roles", icon: Shield, permission: "Roles.Read" },
+  { title: "Integrations", url: "/integrations", icon: Plug, permission: "Integrations.Read" },
+  { title: "Analytics", url: "/analytics", icon: BarChart3, permission: "Analytics.Read" },
+  { title: "Audit Logs", url: "/audit", icon: FileText, permission: "Audit.Read" },
   { title: "Notifications", url: "/notifications", icon: Bell },
 ];
 
 const secondary: Item[] = [
   { title: "Profile", url: "/profile", icon: User },
-  { title: "Billing", url: "/billing", icon: CreditCard, permission: "Billing.View" },
+  { title: "Billing", url: "/billing", icon: CreditCard, permission: "Billing.Read" },
   { title: "Settings", url: "/settings", icon: Settings, permission: "Org.Manage" },
   { title: "Support", url: "/support", icon: LifeBuoy },
 ];
@@ -93,10 +89,15 @@ export function AppSidebar() {
             <SidebarMenu>
               {visiblePrimary.map((item) => (
                 <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton asChild isActive={isActive(item.url)} tooltip={item.title}>
+                  <SidebarMenuButton 
+                    asChild 
+                    isActive={isActive(item.url)} 
+                    tooltip={item.title}
+                    className="group transition-all duration-300 hover:bg-primary/5 hover:translate-x-1 data-[active=true]:gradient-primary data-[active=true]:text-white data-[active=true]:shadow-elegant"
+                  >
                     <Link to={item.url}>
-                      <item.icon className="h-4 w-4" />
-                      <span>{item.title}</span>
+                      <item.icon className="h-4 w-4 transition-transform duration-300 group-hover:scale-110" />
+                      <span className="transition-opacity">{item.title}</span>
                     </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
@@ -111,10 +112,15 @@ export function AppSidebar() {
             <SidebarMenu>
               {visibleSecondary.map((item) => (
                 <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton asChild isActive={isActive(item.url)} tooltip={item.title}>
+                  <SidebarMenuButton 
+                    asChild 
+                    isActive={isActive(item.url)} 
+                    tooltip={item.title}
+                    className="group transition-all duration-300 hover:bg-primary/5 hover:translate-x-1 data-[active=true]:gradient-primary data-[active=true]:text-white data-[active=true]:shadow-elegant"
+                  >
                     <Link to={item.url}>
-                      <item.icon className="h-4 w-4" />
-                      <span>{item.title}</span>
+                      <item.icon className="h-4 w-4 transition-transform duration-300 group-hover:scale-110" />
+                      <span className="transition-opacity">{item.title}</span>
                     </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>

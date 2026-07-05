@@ -184,7 +184,7 @@ function MembersPage() {
     );
   }
 
-  if (!hasPermission("People.View")) {
+  if (!hasPermission("People.Read")) {
     return (
       <div className="space-y-6">
         <PageHeader title="Access Denied" />

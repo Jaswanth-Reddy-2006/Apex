@@ -11,18 +11,18 @@ export async function checkPermission(userId: string, orgId: string, permissionK
   
   if (!roleId && member.role) {
     const roleMapping: Record<string, string> = {
-      'owner': 'Owner',
-      'admin': 'Organization Admin',
-      'manager': 'Project Manager',
-      'developer': 'Developer',
-      'designer': 'Designer',
-      'qa': 'QA Engineer',
-      'hr': 'HR',
-      'finance': 'Finance',
-      'sales': 'Sales',
-      'viewer': 'Guest'
+      'owner': 'owner',
+      'admin': 'admin',
+      'manager': 'manager',
+      'developer': 'developer',
+      'designer': 'designer',
+      'qa': 'qa',
+      'hr': 'hr',
+      'finance': 'finance',
+      'sales': 'sales',
+      'viewer': 'viewer'
     };
-    const roleName = roleMapping[member.role.toLowerCase()] || 'Guest';
+    const roleName = roleMapping[member.role.toLowerCase()] || 'viewer';
     const role = await prisma.role.findFirst({ where: { name: roleName, is_system: true } });
     if (role) {
       roleId = role.id;
@@ -58,18 +58,18 @@ export async function getUserPermissions(userId: string, orgId: string): Promise
   let roleId = member.custom_role_id;
   if (!roleId && member.role) {
     const roleMapping: Record<string, string> = {
-      'owner': 'Owner',
-      'admin': 'Organization Admin',
-      'manager': 'Project Manager',
-      'developer': 'Developer',
-      'designer': 'Designer',
-      'qa': 'QA Engineer',
-      'hr': 'HR',
-      'finance': 'Finance',
-      'sales': 'Sales',
-      'viewer': 'Guest'
+      'owner': 'owner',
+      'admin': 'admin',
+      'manager': 'manager',
+      'developer': 'developer',
+      'designer': 'designer',
+      'qa': 'qa',
+      'hr': 'hr',
+      'finance': 'finance',
+      'sales': 'sales',
+      'viewer': 'viewer'
     };
-    const roleName = roleMapping[member.role.toLowerCase()] || 'Guest';
+    const roleName = roleMapping[member.role.toLowerCase()] || 'viewer';
     const role = await prisma.role.findFirst({ where: { name: roleName, is_system: true } });
     if (role) roleId = role.id;
   }

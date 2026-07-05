@@ -30,6 +30,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { useOrg } from "@/lib/org-context";
+import { OwnerDashboard } from "@/components/dashboard/owner-dashboard";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
   component: Dashboard,
@@ -95,8 +96,8 @@ function StatCards() {
         <Card key={c.label} className="shadow-soft">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">{c.label}</CardTitle>
-            <div className="rounded-md bg-primary-soft p-1.5 text-primary">
-              <c.icon className="h-4 w-4" />
+            <div className="rounded-xl bg-primary/20 backdrop-blur-md border border-primary/30 p-2 text-primary shadow-[0_0_15px_rgba(var(--color-primary),0.3)]">
+              <c.icon className="h-5 w-5" />
             </div>
           </CardHeader>
           <CardContent>
@@ -200,22 +201,7 @@ function ProjectsCard({ title = "Projects" }: { title?: string }) {
 }
 
 // -------------------- Owner / Admin --------------------
-function OwnerDashboard() {
-  return (
-    <div className="space-y-8">
-      <PageHeader
-        title="Owner Dashboard"
-        description="Full command over your organization, projects, and finances."
-        actions={<RoleBadge />}
-      />
-      <StatCards />
-      <div className="grid gap-4 lg:grid-cols-3">
-        <div className="lg:col-span-2"><RecentActivityCard /></div>
-        <ProjectsCard />
-      </div>
-    </div>
-  );
-}
+// Handled by the Premium OwnerDashboard imported from @/components/dashboard/owner-dashboard
 
 // -------------------- Project Manager --------------------
 function ProjectManagerDashboard() {

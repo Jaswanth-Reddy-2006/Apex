@@ -28,6 +28,14 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -76,7 +84,7 @@ function ChatPage() {
     );
   }
 
-  if (!hasPermission("Chat.Access")) {
+  if (!hasPermission("Chat.Read")) {
     return (
       <div className="space-y-6">
         <PageHeader title="AI Chat" description="Isolated per-project AI assistant." />
@@ -152,6 +160,28 @@ function ProjectChat({
   const [search, setSearch] = useState("");
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
+  // Rename Dialog State
+  const [renameDialogOpen, setRenameDialogOpen] = useState(false);
+  const [chatToRename, setChatToRename] = useState<{ id: string; title: string } | null>(null);
+  const [newChatName, setNewChatName] = useState("");
+  const [isRenaming, setIsRenaming] = useState(false);
+
+  const handleRenameSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!chatToRename || !newChatName.trim()) return;
+    setIsRenaming(true);
+    try {
+      await renameFn({ data: { id: chatToRename.id, title: newChatName.trim() } });
+      qc.invalidateQueries({ queryKey: ["chat-convs", projectId] });
+      setRenameDialogOpen(false);
+      setChatToRename(null);
+    } catch (err) {
+      toast.error("Failed to rename chat");
+    } finally {
+      setIsRenaming(false);
+    }
+  };
+
   const convsQ = useQuery({
     queryKey: ["chat-convs", projectId],
     queryFn: () => listFn({ data: { project_id: projectId } }),
@@ -186,8 +216,8 @@ function ProjectChat({
     <div className="grid flex-1 grid-cols-12 gap-4 overflow-hidden">
       {/* Conversations sidebar */}
       {isSidebarOpen && (
-        <Card className="col-span-12 flex flex-col overflow-hidden md:col-span-4 lg:col-span-3">
-          <div className="border-b border-border p-3">
+        <Card className="col-span-12 flex flex-col overflow-hidden md:col-span-4 lg:col-span-3 glass-panel">
+          <div className="border-b border-border/50 p-3">
           <Button
             className="w-full"
             onClick={() => createMut.mutate()}
@@ -248,17 +278,17 @@ function ProjectChat({
               </p>
             ) : (
               (convsQ.data ?? []).map((c) => (
-                <div
-                  key={c.id}
-                  className={cn(
-                    "group flex items-center gap-1 rounded-md pr-1 transition hover:bg-muted",
-                    activeId === c.id && "bg-muted",
-                  )}
-                >
-                  <button
-                    onClick={() => setActiveId(c.id)}
-                    className="flex-1 truncate px-2 py-2 text-left text-sm"
+                  <div
+                    key={c.id}
+                    className={cn(
+                      "group flex items-center gap-1 rounded-xl pr-1 transition-all duration-300 hover:bg-primary/5 hover:shadow-sm",
+                      activeId === c.id && "bg-primary/10 border-primary/20",
+                    )}
                   >
+                    <button
+                      onClick={() => setActiveId(c.id)}
+                      className="flex-1 truncate px-2 py-2 text-left text-sm"
+                    >
                     <div className="flex items-center gap-1.5">
                       {c.pinned && <Pin className="h-3 w-3 shrink-0 text-primary" />}
                       <span className="truncate">{c.title}</span>
@@ -277,19 +307,17 @@ function ProjectChat({
                   >
                     {c.pinned ? <PinOff className="h-3.5 w-3.5" /> : <Pin className="h-3.5 w-3.5" />}
                   </button>
-                  <button
-                    onClick={async () => {
-                      const name = prompt("Rename chat", c.title);
-                      if (name && name.trim()) {
-                        await renameFn({ data: { id: c.id, title: name.trim() } });
-                        qc.invalidateQueries({ queryKey: ["chat-convs", projectId] });
-                      }
-                    }}
-                    className="opacity-0 px-1 text-xs transition group-hover:opacity-100"
-                    title="Rename"
-                  >
-                    ✎
-                  </button>
+                    <button
+                      onClick={() => {
+                        setChatToRename({ id: c.id, title: c.title });
+                        setNewChatName(c.title);
+                        setRenameDialogOpen(true);
+                      }}
+                      className="opacity-0 px-1 text-xs transition-opacity group-hover:opacity-100 hover:text-primary"
+                      title="Rename"
+                    >
+                      ✎
+                    </button>
                   <button
                     onClick={async () => {
                       if (!confirm("Delete this chat?")) return;
@@ -310,12 +338,41 @@ function ProjectChat({
       </Card>
       )}
 
+      {/* Rename Dialog */}
+      <Dialog open={renameDialogOpen} onOpenChange={setRenameDialogOpen}>
+        <DialogContent className="glass-panel sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Rename Chat</DialogTitle>
+            <DialogDescription>
+              Enter a new name for this conversation.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleRenameSubmit} className="space-y-4 pt-4">
+            <Input
+              value={newChatName}
+              onChange={(e) => setNewChatName(e.target.value)}
+              placeholder="Chat name"
+              autoFocus
+            />
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setRenameDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={!newChatName.trim() || isRenaming}>
+                {isRenaming && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Save
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
       {/* Chat window */}
       <Card className={cn(
-        "flex flex-col overflow-hidden transition-all",
+        "flex flex-col overflow-hidden transition-all duration-500 glass-panel border-transparent",
         isSidebarOpen ? "col-span-12 md:col-span-8 lg:col-span-9" : "col-span-12"
       )}>
-        <div className="flex items-center gap-2 border-b border-border p-2">
+        <div className="flex items-center gap-2 border-b border-border/50 p-3 bg-background/40 backdrop-blur-md z-10">
           <Button variant="ghost" size="icon" onClick={() => setIsSidebarOpen(!isSidebarOpen)} title={isSidebarOpen ? "Hide sidebar" : "Show sidebar"}>
             {isSidebarOpen ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeftOpen className="h-4 w-4" />}
           </Button>
@@ -457,8 +514,8 @@ function ChatWindow({
   };
 
   return (
-    <>
-      <div ref={scrollRef} className="flex-1 overflow-y-auto p-6">
+    <div className="relative flex-1 flex flex-col overflow-hidden">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto p-6 scroll-smooth">
         {historyQ.isLoading ? (
           <div className="flex justify-center p-8">
             <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
@@ -476,20 +533,23 @@ function ChatWindow({
         ) : (
           <div className="mx-auto max-w-3xl space-y-6">
             {messages.map((m) => (
-              <div key={m.id} className="flex gap-3">
+              <div key={m.id} className={cn("flex gap-4 animate-in fade-in slide-in-from-bottom-2", m.role === "user" ? "flex-row-reverse" : "flex-row")}>
                 <div
                   className={cn(
-                    "flex h-8 w-8 shrink-0 items-center justify-center rounded-full",
-                    m.role === "user" ? "bg-primary text-primary-foreground" : "bg-primary-soft text-primary",
+                    "flex h-8 w-8 shrink-0 items-center justify-center rounded-full shadow-sm",
+                    m.role === "user" ? "bg-primary text-primary-foreground" : "bg-primary/10 text-primary border border-primary/20",
                   )}
                 >
                   {m.role === "user" ? <UserIcon className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
                 </div>
-                <div className="flex-1 space-y-1">
-                  <div className="text-xs font-medium text-muted-foreground">
+                <div className={cn("flex-1 space-y-1 max-w-[80%]", m.role === "user" ? "text-right" : "text-left")}>
+                  <div className="text-xs font-medium text-muted-foreground px-1">
                     {m.role === "user" ? "You" : "APEX AI"}
                   </div>
-                  <div className="prose prose-sm max-w-none dark:prose-invert">
+                  <div className={cn(
+                    "prose prose-sm max-w-none dark:prose-invert rounded-2xl px-5 py-3 shadow-sm inline-block text-left",
+                    m.role === "user" ? "bg-primary text-primary-foreground" : "bg-card border border-border/50"
+                  )}>
                     <ReactMarkdown>
                       {m.parts.map((p) => (p.type === "text" ? p.text : "")).join("")}
                     </ReactMarkdown>
@@ -511,12 +571,12 @@ function ChatWindow({
         )}
       </div>
 
-      <div className="border-t border-border p-4">
-        <div className="mx-auto max-w-3xl">
+      <div className="p-4 bg-gradient-to-t from-background via-background to-transparent z-10 sticky bottom-0">
+        <div className="mx-auto max-w-3xl relative">
           {attachments.length > 0 && (
-            <div className="mb-2 flex flex-wrap gap-2">
+            <div className="mb-2 flex flex-wrap gap-2 absolute -top-10 left-0">
               {attachments.map((a, i) => (
-                <Badge key={i} variant="secondary" className="gap-1">
+                <Badge key={i} variant="secondary" className="gap-1 shadow-sm glass-panel border-primary/20">
                   <Paperclip className="h-3 w-3" />
                   {a.name}
                   <button
@@ -529,16 +589,17 @@ function ChatWindow({
               ))}
             </div>
           )}
-          <div className="flex items-end gap-2">
+          <div className="flex items-end gap-2 p-2 glass-panel shadow-elegant rounded-3xl border-primary/20">
             <input ref={fileRef} type="file" hidden onChange={onPickFile} />
             <Button
-              variant="outline"
+              variant="ghost"
               size="icon"
+              className="rounded-full shrink-0 hover:bg-primary/10 hover:text-primary transition-colors"
               onClick={() => fileRef.current?.click()}
               disabled={uploading || busy}
               title="Attach file"
             >
-              {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Paperclip className="h-4 w-4" />}
+              {uploading ? <Loader2 className="h-4 w-4 animate-spin text-primary" /> : <Paperclip className="h-5 w-5" />}
             </Button>
             <Textarea
               ref={inputRef}
@@ -550,16 +611,21 @@ function ChatWindow({
                   submit();
                 }
               }}
-              placeholder="Message APEX AI…"
+              placeholder="Message APEX AI..."
               rows={1}
-              className="max-h-40 min-h-[40px] resize-none"
+              className="max-h-40 min-h-[44px] resize-none border-0 bg-transparent shadow-none focus-visible:ring-0 py-3 text-base"
             />
-            <Button onClick={submit} disabled={busy || !input.trim()} size="icon">
+            <Button 
+              onClick={submit} 
+              disabled={busy || !input.trim()} 
+              size="icon" 
+              className={cn("rounded-full shrink-0 transition-all duration-300", input.trim() ? "gradient-primary shadow-md scale-100" : "bg-muted text-muted-foreground scale-90")}
+            >
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
             </Button>
           </div>
         </div>
       </div>
-    </>
+    </div>
   );
 }

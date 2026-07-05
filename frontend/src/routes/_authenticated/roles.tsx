@@ -278,7 +278,7 @@ function RolesPage() {
     );
   }
 
-  if (!hasPermission("Roles.View")) {
+  if (!hasPermission("Roles.Read")) {
     return (
       <div className="space-y-6">
         <PageHeader title="Access Denied" />
@@ -331,7 +331,7 @@ function RolesPage() {
             <Button
               className="gradient-primary text-primary-foreground font-medium"
               onClick={handleSavePermissions}
-              disabled={savingPermissions || !activeRoleItem || !hasPermission("Roles.Manage")}
+              disabled={savingPermissions || !activeRoleItem || !hasPermission("Roles.Update")}
             >
               {savingPermissions ? (
                 <Loader2 className="h-4 w-4 animate-spin mr-2" />
@@ -463,35 +463,35 @@ function RolesPage() {
                           <Checkbox
                             checked={createChecked}
                             onCheckedChange={(val) => handleTogglePermission(m.createKey, !!val)}
-                            disabled={!hasPermission("Roles.Manage")}
+                            disabled={!hasPermission("Roles.Update")}
                           />
                         </TableCell>
                         <TableCell className="text-center py-3.5">
                           <Checkbox
                             checked={readChecked}
                             onCheckedChange={(val) => handleTogglePermission(m.readKey, !!val)}
-                            disabled={!hasPermission("Roles.Manage")}
+                            disabled={!hasPermission("Roles.Update")}
                           />
                         </TableCell>
                         <TableCell className="text-center py-3.5">
                           <Checkbox
                             checked={updateChecked}
                             onCheckedChange={(val) => handleTogglePermission(m.updateKey, !!val)}
-                            disabled={!hasPermission("Roles.Manage")}
+                            disabled={!hasPermission("Roles.Update")}
                           />
                         </TableCell>
                         <TableCell className="text-center py-3.5">
                           <Checkbox
                             checked={deleteChecked}
                             onCheckedChange={(val) => handleTogglePermission(m.deleteKey, !!val)}
-                            disabled={!hasPermission("Roles.Manage")}
+                            disabled={!hasPermission("Roles.Update")}
                           />
                         </TableCell>
                         <TableCell className="text-center py-3.5">
                           <Checkbox
                             checked={allChecked}
                             onCheckedChange={(val) => handleToggleAllModule(m, !!val)}
-                            disabled={!hasPermission("Roles.Manage")}
+                            disabled={!hasPermission("Roles.Update")}
                           />
                         </TableCell>
                       </TableRow>
@@ -514,7 +514,7 @@ function RolesPage() {
               <DialogTrigger asChild>
                 <Button
                   className="gradient-primary text-primary-foreground font-medium"
-                  disabled={!activeOrg || !hasPermission("Roles.Manage")}
+                  disabled={!activeOrg || !hasPermission("Roles.Update")}
                 >
                   <Plus className="mr-2 h-4 w-4" /> Add Custom Role
                 </Button>
@@ -593,7 +593,7 @@ function RolesPage() {
                           </p>
                         )}
                       </div>
-                      {!r.is_system && hasPermission("Roles.Manage") && (
+                      {!r.is_system && hasPermission("Roles.Update") && (
                         <Button
                           variant="ghost"
                           size="icon"

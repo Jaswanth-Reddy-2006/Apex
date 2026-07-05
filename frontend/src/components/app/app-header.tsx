@@ -35,25 +35,30 @@ export function AppHeader({ children }: { children?: ReactNode }) {
   return (
     <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-border bg-background/80 px-4 backdrop-blur-md">
       {children}
-      <div className="ml-2 hidden max-w-md flex-1 md:block">
+      <div className="ml-2 hidden max-w-md flex-1 md:block group">
         <div className="relative">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground group-focus-within:text-primary transition-colors" />
           <Input
-            placeholder="Search projects, docs, members…"
-            className="h-9 pl-9"
+            placeholder="Search projects, docs, members..."
+            className="h-10 pl-9 pr-12 rounded-2xl bg-muted/50 border-transparent focus-visible:bg-background focus-visible:ring-primary/30 focus-visible:border-primary/50 focus-visible:shadow-[0_0_15px_rgba(var(--color-primary),0.1)] transition-all"
             aria-label="Search"
           />
+          <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1 opacity-50 group-focus-within:opacity-0 transition-opacity">
+            <kbd className="inline-flex h-5 items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground">
+              <span className="text-xs">⌘</span>K
+            </kbd>
+          </div>
         </div>
       </div>
       <div className="ml-auto flex items-center gap-1">
         <ThemeToggle />
-        <Button variant="ghost" size="icon" aria-label="Notifications">
-          <Bell className="h-4 w-4" />
+        <Button variant="ghost" size="icon" aria-label="Notifications" className="hover:bg-primary-soft hover:text-primary transition-all group">
+          <Bell className="h-4 w-4 group-hover:rotate-12 group-hover:scale-110 transition-transform origin-top" />
         </Button>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" aria-label="Account">
-              <Avatar className="h-7 w-7">
+            <Button variant="ghost" size="icon" aria-label="Account" className="hover:scale-105 transition-transform">
+              <Avatar className="h-8 w-8 hover:shadow-[0_0_15px_rgba(var(--color-primary),0.3)] transition-shadow">
                 <AvatarFallback className="bg-primary text-primary-foreground text-xs">
                   {initials}
                 </AvatarFallback>

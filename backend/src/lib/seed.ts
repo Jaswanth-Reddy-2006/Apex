@@ -5,6 +5,10 @@ export async function seedDefaultRolesAndPermissions() {
     console.log("[Seed] Syncing default permissions and roles...");
 
     const permissionsData = [
+      // Organization
+      { key: "Org.Manage", name: "Manage Organization", category: "Organization", description: "Allows managing organization settings" },
+      { key: "Workspace.Read", name: "Read Workspaces", category: "Workspace", description: "Allows viewing workspaces" },
+
       // AI Chat
       { key: "Chat.Create", name: "Create AI Chats", category: "Chat", description: "Allows creating AI chats" },
       { key: "Chat.Read", name: "Read AI Chats", category: "Chat", description: "Allows reading AI chats" },
