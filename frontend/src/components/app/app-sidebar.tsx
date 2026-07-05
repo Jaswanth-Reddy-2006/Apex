@@ -16,6 +16,7 @@ import {
   FileText,
   MessageSquare,
   Cpu,
+  Triangle,
 } from "lucide-react";
 import {
   Sidebar,
