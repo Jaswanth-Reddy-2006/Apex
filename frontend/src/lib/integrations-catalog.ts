@@ -33,6 +33,7 @@ export const INTEGRATIONS: IntegrationDefinition[] = [
   { id: "jira", name: "Jira", category: "productivity", description: "Issue tracking" },
   { id: "linear", name: "Linear", category: "productivity", description: "Modern issue tracker" },
   { id: "trello", name: "Trello", category: "productivity", description: "Kanban boards" },
+  { id: "website", name: "Website Scraper", category: "productivity", description: "Scrape & index public websites into RAG memory" },
   { id: "openai", name: "OpenAI", category: "ai", description: "GPT models" },
   { id: "claude", name: "Claude", category: "ai", description: "Anthropic models" },
   { id: "gemini", name: "Gemini", category: "ai", description: "Google AI" },

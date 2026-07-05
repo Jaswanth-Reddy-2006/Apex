@@ -24,6 +24,9 @@ import {
   connectGoogleDrive,
   connectGoogleDriveOAuth,
   listGoogleDriveFiles,
+  scrapeWebsite,
+  listScrapedWebsites,
+  deleteScrapedWebsite,
 } from "@/lib/api.functions";
 import { INTEGRATIONS, type IntegrationDefinition } from "@/lib/integrations-catalog";
 import { useOrg } from "@/lib/org-context";
@@ -79,6 +82,63 @@ function IntegrationsPage() {
   const [connectingGdrive, setConnectingGdrive] = useState(false);
 
   const [selectedManageIntegration, setSelectedManageIntegration] = useState<string | null>(null);
+  
+  const [websiteOpen, setWebsiteOpen] = useState(false);
+  const [newUrl, setNewUrl] = useState("");
+  const [scraping, setScraping] = useState(false);
+
+  const listWebsitesFn = useServerFn(listScrapedWebsites);
+  const scrapeWebsiteFn = useServerFn(scrapeWebsite);
+  const deleteWebsiteFn = useServerFn(deleteScrapedWebsite);
+
+  const websitesQuery = useQuery({
+    queryKey: ["scraped-websites", activeOrg?.organization_id],
+    queryFn: () => listWebsitesFn({ organization_id: activeOrg?.organization_id! }),
+    enabled: !!activeOrg && websiteOpen,
+  });
+
+  const handleScrapeWebsite = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newUrl) return;
+    setScraping(true);
+    try {
+      await scrapeWebsiteFn({
+        data: {
+          url: newUrl,
+          organization_id: activeOrg?.organization_id!,
+        }
+      });
+      toast.success("Website scraped and indexed successfully!");
+      setNewUrl("");
+      queryClient.invalidateQueries({ queryKey: ["scraped-websites", activeOrg?.organization_id] });
+      queryClient.invalidateQueries({ queryKey: ["integrations", activeOrg?.organization_id] });
+    } catch (err: any) {
+      toast.error(err.message || "Failed to scrape website.");
+    } finally {
+      setScraping(false);
+    }
+  };
+
+  const handleDeleteWebsite = async (url: string) => {
+    if (!confirm(`Are you sure you want to delete indexed pages for ${url}?`)) return;
+    const toastId = toast.loading("Deleting scraped website data...");
+    try {
+      await deleteWebsiteFn({
+        data: {
+          url,
+          organization_id: activeOrg?.organization_id!,
+        }
+      });
+      toast.success("Website data deleted.");
+      queryClient.invalidateQueries({ queryKey: ["scraped-websites", activeOrg?.organization_id] });
+      queryClient.invalidateQueries({ queryKey: ["integrations", activeOrg?.organization_id] });
+    } catch (err: any) {
+      toast.error(err.message || "Failed to delete website.");
+    } finally {
+      toast.dismiss(toastId);
+    }
+  };
+
   const disconnectFn = useServerFn(disconnectIntegration);
 
   const disconnectMutation = useMutation({
@@ -249,6 +309,8 @@ function IntegrationsPage() {
       setTimeout(() => {
         toast.dismiss(toastId);
       }, 5000);
+    } else if (item.id === "website") {
+      setWebsiteOpen(true);
     } else {
       toast.info(`${item.name} integration will be enabled soon.`);
     }
@@ -384,7 +446,13 @@ function IntegrationsPage() {
                             variant="outline"
                             size="sm"
                             className="flex-1"
-                            onClick={() => setSelectedManageIntegration(i.id)}
+                            onClick={() => {
+                              if (i.id === "website") {
+                                setWebsiteOpen(true);
+                              } else {
+                                setSelectedManageIntegration(i.id);
+                              }
+                            }}
                           >
                             <Settings2 className="mr-1.5 h-3.5 w-3.5" />
                             Manage
@@ -713,6 +781,87 @@ function IntegrationsPage() {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={websiteOpen} onOpenChange={setWebsiteOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <BookOpen className="h-5 w-5 text-primary" /> Manage Website Scraper
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-6 py-2">
+            <form onSubmit={handleScrapeWebsite} className="space-y-2">
+              <Label htmlFor="web-url" className="text-sm font-semibold">
+                Scrape & Index a New Website URL
+              </Label>
+              <div className="flex gap-2">
+                <Input
+                  id="web-url"
+                  type="url"
+                  placeholder="https://example.com/docs"
+                  value={newUrl}
+                  onChange={(e) => setNewUrl(e.target.value)}
+                  disabled={scraping}
+                  required
+                  className="flex-1"
+                />
+                <Button type="submit" disabled={scraping || !newUrl} className="gradient-primary">
+                  {scraping ? (
+                    <>
+                      <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> Scraping...
+                    </>
+                  ) : (
+                    "Scrape & Index"
+                  )}
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Paste a public documentation link or webpage. The scraper will extract and clean the text, run vector embeddings, and save them to your AI RAG memory.
+              </p>
+            </form>
+
+            <div className="space-y-3">
+              <h3 className="text-sm font-semibold text-foreground">Currently Indexed Pages</h3>
+              {websitesQuery.isLoading ? (
+                <div className="space-y-2 py-4">
+                  <Skeleton className="h-10 w-full" />
+                  <Skeleton className="h-10 w-full" />
+                </div>
+              ) : websitesQuery.data && websitesQuery.data.length > 0 ? (
+                <div className="max-h-[300px] overflow-y-auto space-y-2 pr-1">
+                  {websitesQuery.data.map((site: any) => (
+                    <div
+                      key={site.url}
+                      className="flex items-center justify-between p-3 rounded-lg border border-border bg-card text-sm"
+                    >
+                      <div className="flex flex-col space-y-0.5 max-w-[80%]">
+                        <span className="font-semibold text-foreground truncate">{site.title}</span>
+                        <span className="text-xs text-muted-foreground truncate font-mono">{site.url}</span>
+                        <span className="text-[10px] text-muted-foreground">
+                          {site.chunks_count} chunks indexed · Added {new Date(site.created_at).toLocaleDateString()}
+                        </span>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="text-destructive hover:bg-destructive/10 shrink-0"
+                        onClick={() => handleDeleteWebsite(site.url)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <EmptyState
+                  icon={BookOpen}
+                  title="No websites indexed"
+                  description="Add a webpage URL above to start teaching your APEX AI assistant."
+                />
+              )}
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
