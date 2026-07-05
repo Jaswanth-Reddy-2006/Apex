@@ -286,43 +286,41 @@ function BillingPage() {
               </thead>
               <tbody className="divide-y divide-border">
                 {COMPARISON_FEATURES.map((category) => (
-                  <tr key={category.category} className="contents">
-                    {/* Category Label Row */}
-                    <tr className="bg-muted/10 font-bold border-b border-border">
-                      <td colSpan={4} className="p-3 text-[11px] text-primary uppercase tracking-wider">{category.category}</td>
-                    </tr>
-                    {/* Items rows */}
-                    {category.items.map((item) => (
-                      <tr key={item.name} className="hover:bg-muted/10">
-                        <td className="p-4 font-medium text-foreground">{item.name}</td>
-                        <td className="p-4 text-muted-foreground">
-                          {"devCheck" in item && !item.devCheck ? (
-                            <X className="h-4 w-4 text-muted-foreground/30" />
-                          ) : (
-                            <span>{item.dev}</span>
-                          )}
-                        </td>
-                        <td className="p-4 text-muted-foreground">
-                          {"teamCheck" in item && !item.teamCheck ? (
-                            <X className="h-4 w-4 text-muted-foreground/30" />
-                          ) : (
-                            <span>{item.team}</span>
-                          )}
-                        </td>
-                        <td className="p-4 font-medium text-foreground">
-                          {"entCheck" in item && item.entCheck ? (
-                            <div className="flex items-center gap-1.5 text-primary">
-                              <Check className="h-4 w-4 text-primary shrink-0" />
-                              <span>{item.ent}</span>
-                            </div>
-                          ) : (
-                            <span>{item.ent}</span>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
+                  <tr key={category.category} className="bg-muted/10 font-bold border-b border-border">
+                    <td colSpan={4} className="p-3 text-[11px] text-primary uppercase tracking-wider">{category.category}</td>
                   </tr>
                 ))}
+                {COMPARISON_FEATURES.flatMap((category) =>
+                  category.items.map((item) => (
+                    <tr key={item.name} className="hover:bg-muted/10">
+                      <td className="p-4 font-medium text-foreground">{item.name}</td>
+                      <td className="p-4 text-muted-foreground">
+                        {"devCheck" in item && !item.devCheck ? (
+                          <X className="h-4 w-4 text-muted-foreground/30" />
+                        ) : (
+                          <span>{item.dev}</span>
+                        )}
+                      </td>
+                      <td className="p-4 text-muted-foreground">
+                        {"teamCheck" in item && !item.teamCheck ? (
+                          <X className="h-4 w-4 text-muted-foreground/30" />
+                        ) : (
+                          <span>{item.team}</span>
+                        )}
+                      </td>
+                      <td className="p-4 font-medium text-foreground">
+                        {"entCheck" in item && item.entCheck ? (
+                          <div className="flex items-center gap-1.5 text-primary">
+                            <Check className="h-4 w-4 text-primary shrink-0" />
+                            <span>{item.ent}</span>
+                          </div>
+                        ) : (
+                          <span>{item.ent}</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
