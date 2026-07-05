@@ -269,21 +269,9 @@ function IntegrationsPage() {
         toast.error("No active organization found.");
         return;
       }
-      const clientId = import.meta.env.VITE_NOTION_CLIENT_ID || "";
-      if (!clientId) {
-        setNotionToken("");
-        setNotionWorkspace("");
-        setNotionOpen(true);
-        return;
-      }
-      const redirectUri = encodeURIComponent(`${window.location.origin}/integrations-callback`);
-      const notionOAuthUrl = `https://api.notion.com/v1/oauth/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=code&owner=user&state=notion:${activeOrg.organization_id}`;
-      
-      const toastId = toast.loading("Redirecting to Notion for authorization...");
-      window.location.href = notionOAuthUrl;
-      setTimeout(() => {
-        toast.dismiss(toastId);
-      }, 5000);
+      setNotionToken("");
+      setNotionWorkspace("");
+      setNotionOpen(true);
     } else if (item.id === "gdrive") {
       if (isConnected) {
         const conn = connected.get("gdrive");
@@ -534,38 +522,64 @@ function IntegrationsPage() {
           <DialogHeader>
             <DialogTitle>Connect Notion Workspace</DialogTitle>
           </DialogHeader>
-          <form onSubmit={handleNotionConnect} className="space-y-4">
-            <div>
-              <Label htmlFor="notion-workspace">Workspace Name</Label>
-              <Input
-                id="notion-workspace"
-                value={notionWorkspace}
-                onChange={(e) => setNotionWorkspace(e.target.value)}
-                placeholder="e.g. APEX Docs"
-              />
-            </div>
-            <div>
-              <Label htmlFor="notion-token">Internal Integration Token</Label>
-              <Input
-                id="notion-token"
-                type="password"
-                value={notionToken}
-                onChange={(e) => setNotionToken(e.target.value)}
-                placeholder="secret_..."
-              />
-              <p className="mt-1 text-xs text-muted-foreground">
-                Generate a secret token in your <a href="https://www.notion.so/my-integrations" target="_blank" rel="noreferrer" className="text-primary hover:underline">Notion Integrations Dashboard</a>.
-              </p>
-            </div>
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setNotionOpen(false)}>
-                Cancel
-              </Button>
-              <Button type="submit" disabled={connectingNotion}>
-                {connectingNotion ? <Loader2 className="h-4 w-4 animate-spin" /> : "Connect Workspace"}
-              </Button>
-            </DialogFooter>
-          </form>
+          <div className="space-y-4">
+            {import.meta.env.VITE_NOTION_CLIENT_ID && (
+              <div className="pb-3 border-b border-border">
+                <p className="text-xs text-muted-foreground mb-2">Connect automatically using your Notion account credentials:</p>
+                <Button
+                  type="button"
+                  variant="default"
+                  className="w-full gradient-primary text-primary-foreground flex items-center justify-center gap-2"
+                  onClick={() => {
+                    const clientId = import.meta.env.VITE_NOTION_CLIENT_ID;
+                    const redirectUri = encodeURIComponent(`${window.location.origin}/integrations-callback`);
+                    const notionOAuthUrl = `https://api.notion.com/v1/oauth/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=code&owner=user&state=notion:${activeOrg?.organization_id}`;
+                    
+                    toast.loading("Redirecting to Notion...");
+                    window.location.href = notionOAuthUrl;
+                  }}
+                >
+                  🚀 Connect with Notion OAuth
+                </Button>
+                <div className="relative my-4 text-center">
+                  <span className="bg-background px-2 text-[10px] text-muted-foreground uppercase font-bold tracking-wider relative z-10">Or manually connect</span>
+                  <div className="absolute inset-0 flex items-center"><span className="w-full border-t border-border" /></div>
+                </div>
+              </div>
+            )}
+            <form onSubmit={handleNotionConnect} className="space-y-4">
+              <div>
+                <Label htmlFor="notion-workspace">Workspace Name</Label>
+                <Input
+                  id="notion-workspace"
+                  value={notionWorkspace}
+                  onChange={(e) => setNotionWorkspace(e.target.value)}
+                  placeholder="e.g. APEX Docs"
+                />
+              </div>
+              <div>
+                <Label htmlFor="notion-token">Internal Integration Token</Label>
+                <Input
+                  id="notion-token"
+                  type="password"
+                  value={notionToken}
+                  onChange={(e) => setNotionToken(e.target.value)}
+                  placeholder="secret_..."
+                />
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Generate a secret token in your <a href="https://www.notion.so/my-integrations" target="_blank" rel="noreferrer" className="text-primary hover:underline">Notion Integrations Dashboard</a>.
+                </p>
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setNotionOpen(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={connectingNotion}>
+                  {connectingNotion ? <Loader2 className="h-4 w-4 animate-spin" /> : "Connect Workspace"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </div>
         </DialogContent>
       </Dialog>
 
