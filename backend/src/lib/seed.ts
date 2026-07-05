@@ -100,28 +100,34 @@ export async function seedDefaultRolesAndPermissions() {
         });
       }
 
+      const baselineKeys = [
+        "Chat.Create", "Chat.Read", "Chat.Update", "Chat.Delete",
+        "Integrations.Create", "Integrations.Read", "Integrations.Update", "Integrations.Delete",
+        "Project.Read", "Analytics.Read"
+      ];
+
       let assignedKeys: string[] = [];
       if (r.name === "owner" || r.name === "admin") {
         assignedKeys = seededPerms.map((p) => p.key);
-      } else if (r.name === "manager") {
-        assignedKeys = [
-          "Chat.Create", "Chat.Read", "Chat.Update", "Chat.Delete",
-          "Project.Create", "Project.Read", "Project.Update", "Project.Delete",
-          "People.Create", "People.Read", "People.Update", "People.Delete",
-          "Analytics.Read", "Roles.Read"
-        ];
-      } else if (["developer", "designer", "qa", "devops"].includes(r.name)) {
-        assignedKeys = [
-          "Chat.Create", "Chat.Read", "Chat.Update",
-          "Project.Read", "People.Read"
-        ];
-        if (r.name === "devops") {
-          assignedKeys.push("Analytics.Read");
+      } else {
+        // Every role gets baseline (AI Chat, Integrations, Dashboard)
+        const roleSpecificKeys = new Set<string>(baselineKeys);
+
+        if (r.name === "manager") {
+          [
+            "Project.Create", "Project.Update", "Project.Delete",
+            "People.Create", "People.Read", "People.Update", "People.Delete",
+            "Roles.Read"
+          ].forEach(k => roleSpecificKeys.add(k));
+        } else if (["developer", "designer", "qa", "devops"].includes(r.name)) {
+          roleSpecificKeys.add("People.Read");
+        } else if (r.name === "finance") {
+          [
+            "Billing.Read", "Billing.Create", "Billing.Update"
+          ].forEach(k => roleSpecificKeys.add(k));
         }
-      } else if (r.name === "finance") {
-        assignedKeys = ["Project.Read", "Billing.Read", "Billing.Create", "Billing.Update"];
-      } else if (r.name === "viewer") {
-        assignedKeys = ["Project.Read"];
+
+        assignedKeys = Array.from(roleSpecificKeys);
       }
 
       // Delete existing role permissions for system roles to refresh mappings cleanly
