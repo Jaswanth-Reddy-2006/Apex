@@ -183,15 +183,17 @@ export const getMyContext = createServerFn({ method: "GET" })
           "Project.View",
           "Analytics.View",
           "Billing.View",
+          "Integrations.Connect",
         ];
       } else if (["developer", "designer", "qa", "tester", "devops"].includes(r)) {
         return [
           "Chat.Access",
           "Project.View",
           "Analytics.View",
+          "Integrations.Connect",
         ];
       }
-      return ["Chat.Access", "Project.View"];
+      return ["Chat.Access", "Project.View", "Integrations.Connect", "Analytics.View"];
     }
 
     const permByOrg: Record<string, string[]> = {};
